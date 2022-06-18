@@ -273,7 +273,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         for edge_index in range(self._config.edge_number):
             edge_reward = 0
             for vehicle_index in self._vehicle_index_within_edges[edge_index][self._time_slots.now()]:
-                requested_task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(now_time)
+                requested_task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(self._time_slots.now())
                 if requested_task_index != -1:
                     edge_reward += self._vehicle_edge_transmission_power / self._vehicle_intar_edge_inference[vehicle_index] - self._vehicle_wired_transmission_time() - self._vehicle_execution_time()
                     
@@ -408,6 +408,7 @@ DiscreteArray = specs.DiscreteArray
 class EnvironmentSpec(NamedTuple):
     """Full specification of the domains used by a given environment."""
     observations: NestedSpec
+    critic_actions: NestedSpec
     actions: NestedSpec
     rewards: NestedSpec
     discounts: NestedSpec
@@ -417,6 +418,7 @@ def make_environment_spec(environment: vehicularNetworkEnv) -> EnvironmentSpec:
     """Returns an `EnvironmentSpec` describing values used by an environment."""
     return EnvironmentSpec(
         observations=environment.observation_spec(),
+        critic_actions=environment.critic_network_action_spec(),
         actions=environment.action_spec(),
         rewards=environment.reward_spec(),
         discounts=environment.discount_spec())
