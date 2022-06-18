@@ -169,7 +169,6 @@ class trajectory(object):
         return print_result
 
 
-
 class edge(object):
     """ the edge. """
     def __init__(
@@ -302,7 +301,6 @@ class vehicleList(object):
         vehicles_number: int,
         time_slots: timeSlots,
         trajectories_file_name: str,        
-        maximum_power: float,
         slot_number: int,
         task_number: int,
         task_request_rate: float,
@@ -310,7 +308,6 @@ class vehicleList(object):
     ) -> None:
         self._vehicles_number = vehicles_number
         self._trajectories_file_name = trajectories_file_name
-        self._maximum_power = maximum_power
         self._slot_number = slot_number
         self._task_number = task_number
         self._task_request_rate = task_request_rate
@@ -318,12 +315,10 @@ class vehicleList(object):
         
         self._vehicle_trajectories = self.read_vehicle_trajectories(time_slots)
 
-        self._vehicle_list = [vehicle(vehicle_index, vehicle_trajectory, maximum_power, slot_number, task_number, task_request_rate, seed) for vehicle_index, vehicle_trajectory, seed in zip(range(vehicles_number), self._vehicle_trajectories, self._seeds)]
+        self._vehicle_list = [vehicle(vehicle_index, vehicle_trajectory, slot_number, task_number, task_request_rate, seed) for vehicle_index, vehicle_trajectory, seed in zip(range(vehicles_number), self._vehicle_trajectories, self._seeds)]
     
     def get_vehicle_number(self) -> int:
         return int(self._vehicles_number)
-    def get_maximum_power(self) -> float:
-        return float(self._maximum_power)
     def get_slot_number(self) -> int:
         return int(self._slot_number)
     def get_task_number(self) -> int:
@@ -387,10 +382,10 @@ class edgeAction(object):
         now_time: int,
         maximum_vehicle_number: int,
         now_vehicle_number: int,      # the vehicle within the edge
-        now_vehicle_index: List(int),
-        transmission_power_allocation: List(float),
-        task_assignment: List(int),
-        computation_resource_allocation: List(float),
+        now_vehicle_index: List[int],
+        transmission_power_allocation: np.array,
+        task_assignment: np.array,
+        computation_resource_allocation: np.array,
         action_time: int) -> None:
 
         self._edge_index = edge_index
@@ -413,65 +408,11 @@ class edgeAction(object):
         return int(self._now_vehicle_number)
     def get_now_vehicle_index(self) -> List[int]:
         return self._now_vehicle_index
-    def get_transmission_power_allocation(self) -> List(float):
+    def get_transmission_power_allocation(self) -> np.array:
         return self._transmission_power_allocation
-    def get_task_assignment(self) -> List(int):
+    def get_task_assignment(self) -> np.array:
         return self._task_assignment
-    def get_computer_resource_allocation(self) -> List(float):
+    def get_computing_resource_allocation(self) -> np.array:
         return self._computation_resource_allocation
     def get_action_time(self) -> int:
         return int(self._action_time)
-
-class taskInformaiton(object):
-    def __init__(
-        self,
-        now_time: int, 
-        task_index: int,
-        vehicle_index: int,
-        edge_index: int,
-        processing_edge_index: int,
-        SINR: float,
-        intar_edge_interference: float,
-        inter_edge_interference: float,
-        transmission_time: float,
-        execution_time: float,
-        wired_transmission_time: float,
-        sum_processing_time: float,
-    ) -> None:
-        self._now_time = now_time
-        self._task_index = task_index
-        self._vehicle_index = vehicle_index
-        self._edge_index = edge_index
-        self._processing_edge_index = processing_edge_index
-        self._SINR = SINR
-        self._intar_edge_interference = intar_edge_interference
-        self._inter_edge_interference = inter_edge_interference
-        self._transmission_time = transmission_time
-        self._execution_time = execution_time
-        self._wired_transmission_time = wired_transmission_time
-        self._sum_processing_time = sum_processing_time
-        
-    def get_now_time(self) -> int:
-        return int(self._now_time)
-    def get_task_index(self) -> int:
-        return int(self._task_index)
-    def get_vehicle_index(self) -> int:
-        return int(self._vehicle_index)
-    def get_edge_index(self) -> int:
-        return int(self._edge_index)
-    def get_processing_edge_index(self) -> int:
-        return int(self._processing_edge_index)
-    def get_SINR(self) -> float:
-        return float(self._SINR)
-    def get_intar_edge_interference(self) -> float:
-        return float(self._intar_edge_interference)
-    def get_inter_edge_interference(self) -> float:
-        return float(self._inter_edge_interference)
-    def get_transmission_time(self) -> float:
-        return float(self._transmission_time)
-    def get_execution_time(self) -> float:
-        return float(self._execution_time)
-    def get_wired_transmission_time(self) -> float:
-        return float(self._wired_transmission_time)
-    def get_sum_processing_time(self) -> float:
-        return float(self._sum_processing_time)
