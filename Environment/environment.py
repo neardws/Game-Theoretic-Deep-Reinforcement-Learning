@@ -281,7 +281,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     """Define the action spaces of edge in critic network."""
     def critic_network_action_spec(self) -> specs.BoundedArray:
         """Define and return the action space."""
-        critic_network_action_shape = (self._config.edge_number, self._critic_network_action_size)
+        critic_network_action_shape = (self._critic_network_action_size, )
         return specs.BoundedArray(
             shape=(critic_network_action_shape),
             dtype=float,
@@ -302,6 +302,17 @@ class vehicularNetworkEnv(dm_env.Environment):
             name='observations'
         )
     
+    def edge_observation_spec(self) -> specs.BoundedArray:
+        """Define and return the observation space."""
+        observation_shape = (int(self._observation_size), )
+        return specs.BoundedArray(
+            shape=observation_shape,
+            dtype=float,
+            minimum=np.zeros(observation_shape),
+            maximum=np.ones(observation_shape),
+            name='edge_observations'
+        )
+    
     """Define the gloabl action spaces."""
     def action_spec(self) -> specs.BoundedArray:
         """Define and return the action space."""
@@ -314,6 +325,17 @@ class vehicularNetworkEnv(dm_env.Environment):
             name='actions'
         )
 
+    def edge_action_spec(self) -> specs.BoundedArray:
+        """Define and return the action space."""
+        action_shape = (self._action_size, )
+        return specs.BoundedArray(
+            shape=action_shape,
+            dtype=float,
+            minimum=np.zeros(action_shape),
+            maximum=np.ones(action_shape),
+            name='actions'
+        )
+    
     def reward_spec(self):
         """Define and return the reward space."""
         return specs.Array(
@@ -367,7 +389,6 @@ class vehicularNetworkEnv(dm_env.Environment):
                         vehicle_index_within_edges[j][k].append(i)
         return distance_matrix, radio_coverage_matrix, vehicle_number_within_edges, vehicle_index_within_edges, np.max(vehicle_number_within_edges)
     
-        
     def generate_edge_action_from_np_array(
         self, 
         now_time: int,
@@ -407,8 +428,10 @@ DiscreteArray = specs.DiscreteArray
 class EnvironmentSpec(NamedTuple):
     """Full specification of the domains used by a given environment."""
     observations: NestedSpec
+    edge_observation: NestedSpec
     critic_actions: NestedSpec
     actions: NestedSpec
+    edge_action: NestedSpec
     rewards: NestedSpec
     discounts: NestedSpec
 
@@ -417,7 +440,9 @@ def make_environment_spec(environment: vehicularNetworkEnv) -> EnvironmentSpec:
     """Returns an `EnvironmentSpec` describing values used by an environment."""
     return EnvironmentSpec(
         observations=environment.observation_spec(),
+        edge_observation=environment.edge_observation_spec(),
         critic_actions=environment.critic_network_action_spec(),
         actions=environment.action_spec(),
+        edge_action=environment.edge_action_spec(),
         rewards=environment.reward_spec(),
         discounts=environment.discount_spec())

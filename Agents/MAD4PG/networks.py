@@ -36,7 +36,7 @@ def make_default_MAD3PGNetworks(
     num_atoms: int = 51,
     edge_number: int = 9,
 ):
-    from Agents.MAD4PG.agent import MAD3PGNetworks
+    from Agents.MAD4PG.agent import MAD3PGNetwork
 
     # Get total number of action dimensions from action spec.
     num_dimensions = np.prod(action_spec.shape, dtype=int)
@@ -59,8 +59,8 @@ def make_default_MAD3PGNetworks(
         networks.DiscreteValuedHead(vmin, vmax, num_atoms),
     ])
 
-    return MAD3PGNetworks(
-        policy_networks=[policy_network for _ in range(edge_number)],
-        critic_networks=[critic_network for _ in range(edge_number)],
-        observation_networks=[observation_network for _ in range(edge_number)],
-    )
+    return [MAD3PGNetwork(
+        policy_network=policy_network,
+        critic_network=critic_network,
+        observation_network=observation_network,
+    ) for _ in range(edge_number)]

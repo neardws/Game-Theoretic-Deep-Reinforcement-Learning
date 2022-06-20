@@ -152,13 +152,12 @@ class MAD3PGLearner(acme.Learner):
                     'critic_optimizer': self._critic_optimizers,
                     'num_steps': self._num_steps,
                 })
-            critic_means = [snt.Sequential(
-                [critic_network, acme_nets.StochasticMeanHead()]) for critic_network in self._critic_networks]
+            object_to_save = dict()
+            for i in range(len(self._policy_networks)):
+                object_to_save[f'policy_{i}'] = self._policy_networks[i]
+                object_to_save[f'critic_mean_{i}'] = snt.Sequential([self._critic_networks[i], acme_nets.StochasticMeanHead()])
             self._snapshotter = tf2_savers.Snapshotter(
-                objects_to_save={
-                    'policy': self._policy_networks,
-                    'critic': critic_means,
-                })
+                objects_to_save=object_to_save)
 
         # Do not record timestamps until after the first learning step is done.
         # This is to avoid including the time it takes for actors to come online and

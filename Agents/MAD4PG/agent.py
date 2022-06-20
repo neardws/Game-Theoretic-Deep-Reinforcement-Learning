@@ -78,25 +78,25 @@ class MAD3PGConfig:
 
 
 @dataclasses.dataclass
-class MAD3PGNetworks:
+class MAD3PGNetwork:
     """Structure containing the networks for MAD3PG."""
     
-    policy_networks: List[types.TensorTransformation]
-    critic_networks: List[types.TensorTransformation]
-    observation_networks: List[types.TensorTransformation]
+    policy_network: types.TensorTransformation
+    critic_network: types.TensorTransformation
+    observation_network: types.TensorTransformation
 
     def __init__(
         self,
-        policy_networks: List[types.TensorTransformation],
-        critic_networks: List[types.TensorTransformation],
-        observation_networks: List[types.TensorTransformation],
+        policy_network: types.TensorTransformation,
+        critic_network: types.TensorTransformation,
+        observation_network: types.TensorTransformation,
     ):
         # This method is implemented (rather than added by the dataclass decorator)
         # in order to allow observation network to be passed as an arbitrary tensor
         # transformation rather than as a snt Module.
-        self.policy_networks = policy_networks
-        self.critic_networks = critic_networks
-        self.observation_networks = [utils.to_sonnet_module(observation_network) for observation_network in observation_networks]
+        self.policy_network = policy_network
+        self.critic_network = critic_network
+        self.observation_network = utils.to_sonnet_module(observation_network)
 
     def init(
         self, 
@@ -104,43 +104,39 @@ class MAD3PGNetworks:
     ):
         """Initialize the networks given an environment spec."""
         # Get observation and action specs.
-        observation_spec = environment_spec.observations
+        observation_spec = environment_spec.edge_observation
         critic_action_spec = environment_spec.critic_actions
 
-        for _ in range(len(self.policy_networks)):
-            # Create variables for the observation net and, as a side-effect, get a
-            # spec describing the embedding space.
-            emb_spec = utils.create_variables(self.observation_networks[_], [observation_spec])
-
-            # Create variables for the policy and critic nets.
-            utils.create_variables(self.policy_networks[_], [emb_spec])
-            utils.create_variables(self.critic_networks[_], [emb_spec, critic_action_spec])
-
+        # Create variables for the observation net and, as a side-effect, get a
+        # spec describing the embedding space.
+        emb_spec = utils.create_variables(self.observation_network, [observation_spec])
+        
+        # Create variables for the policy and critic nets.
+        _ = utils.create_variables(self.policy_network, [emb_spec])
+        _ = utils.create_variables(self.critic_network, [emb_spec, critic_action_spec])
+        
 
     def make_policy(
         self,
         environment_spec,
         sigma: float = 0.0,
-    ) -> List[Tuple[snt.Module, snt.Module]]:
+    ) -> snt.Module:
         """Create a single network which evaluates the policy."""
         # Stack the observation and policy networks.
 
-        stacks = [
-            [self.observation_networks[_], self.policy_networks[_]] for _ in range(len(self.observation_networks))
-        ]
+        stacks = [self.observation_network, self.policy_network]
 
         # If a stochastic/non-greedy policy is requested, add Gaussian noise on
         # top to enable a simple form of exploration.
         # TODO: Refactor this to remove it from the class.
         if sigma > 0.0:
-            for stack in stacks:
-                stack += [
-                    network_utils.ClippedGaussian(sigma),
-                    network_utils.ClipToSpec(environment_spec.actions),   # Clip to action spec.
-                ]
-        
+            stacks += [
+                network_utils.ClippedGaussian(sigma),
+                network_utils.ClipToSpec(environment_spec.actions),   # Clip to action spec.
+            ]
+                
         # Return a network which sequentially evaluates everything in the stack.
-        return [snt.Sequential(stack) for stack in stacks]
+        return snt.Sequential(stacks)
 
 
 class MAD3PGAgent(agent.Agent):
@@ -156,7 +152,7 @@ class MAD3PGAgent(agent.Agent):
         config: MAD3PGConfig,
         environment,
         environment_spec,
-        networks: Optional[MAD3PGNetworks] = None,
+        networks: Optional[List[MAD3PGNetwork]] = None,
     ):
         """Initialize the agent.
         Args:
@@ -170,7 +166,7 @@ class MAD3PGAgent(agent.Agent):
 
         if networks is None:
             online_networks = make_default_MAD3PGNetworks(
-                action_spec=environment_spec.actions,
+                action_spec=environment_spec.edge_action,
             )
         else:
             online_networks = networks
@@ -178,14 +174,19 @@ class MAD3PGAgent(agent.Agent):
         self._environment = environment
         self._environment_spec = environment_spec
         # Target networks are just a copy of the online networks.
-        target_networks = copy.deepcopy(online_networks)
+        target_networks = [copy.deepcopy(network) for network in online_networks]
 
         # Initialize the networks.
-        online_networks.init(self._environment_spec)
-        target_networks.init(self._environment_spec)
+        for online_network in online_networks:
+            online_network.init(environment_spec)
+        for target_network in target_networks:
+            target_network.init(environment_spec)
+        # for online_network, target_network in zip(online_networks, target_networks):
+        #     online_network.init(self._environment_spec)
+        #     target_network.init(self._environment_spec)
 
         # Create the behavior policy.
-        policy_network = online_networks.make_policy(self._environment_spec, self._config.sigma)
+        policy_networks = [online_network.make_policy(self._environment_spec, self._config.sigma) for online_network in online_networks]
 
         # Create the replay server and grab its address.
         replay_tables = self.make_replay_tables(self._environment_spec)
@@ -196,7 +197,7 @@ class MAD3PGAgent(agent.Agent):
         # data respectively.
         adder = self.make_adder(replay_client=replay_client)
         actor = self.make_actor(
-            policy_network=policy_network, 
+            policy_networks=policy_networks, 
             adder=adder,
         )
         
@@ -314,8 +315,8 @@ class MAD3PGAgent(agent.Agent):
 
     def make_learner(
         self,
-        online_networks: MAD3PGNetworks, 
-        target_networks: MAD3PGNetworks,
+        online_networks: List[MAD3PGNetwork], 
+        target_networks: List[MAD3PGNetwork],
         dataset: Iterator[reverb.ReplaySample],
         counter: Optional[counting.Counter] = None,
         logger: Optional[loggers.Logger] = None,
@@ -324,18 +325,18 @@ class MAD3PGAgent(agent.Agent):
         """Creates an instance of the learner."""
         # The learner updates the parameters (and initializes them).
         return learning.MAD3PGLearner(
-            policy_networks=online_networks.policy_networks,
-            critic_networks=online_networks.critic_networks,
+            policy_networks=[online_network.policy_network for online_network in online_networks],
+            critic_networks=[online_network.critic_network for online_network in online_networks],
 
-            target_policy_networks=target_networks.policy_networks,
-            target_critic_networks=target_networks.critic_networks,
+            target_policy_networks=[target_network.policy_network for target_network in target_networks],
+            target_critic_networks=[target_network.critic_network for target_network in target_networks],
             
             discount=self._config.discount,
             target_update_period=self._config.target_update_period,
             dataset_iterator=dataset,
 
-            observation_networks=online_networks.observation_networks,
-            target_observation_networks=target_networks.observation_networks,
+            observation_networks=[online_network.observation_network for online_network in online_networks],
+            target_observation_networks=[target_network.observation_network for target_network in target_networks],
 
             policy_optimizers=self._config.policy_optimizers,
             critic_optimizers=self._config.critic_optimizers,
@@ -359,7 +360,7 @@ class MultiAgentDistributedDDPG:
         config: MAD3PGConfig,
         environment_factory: Callable[[bool], dm_env.Environment],
         environment_spec,
-        networks: Optional[MAD3PGNetworks] = None,
+        networks: Optional[List[MAD3PGNetwork]] = None,
         num_actors: int = 1,
         num_caches: int = 0,
         max_actor_steps: Optional[int] = None,
@@ -414,11 +415,12 @@ class MultiAgentDistributedDDPG:
         with replicator.scope():
             # Create the networks to optimize (online) and target networks.
             online_networks = self._networks
-            target_networks = copy.deepcopy(online_networks)
+            target_networks = [copy.deepcopy(network) for network in online_networks]
 
             # Initialize the networks.
-            online_networks.init(self._environment_spec)
-            target_networks.init(self._environment_spec)
+            for online_network, target_network in zip(online_networks, target_networks):
+                online_network.init(self._environment_spec)
+                target_network.init(self._environment_spec)
 
         dataset = self._agent.make_dataset_iterator(replay)
         counter = counting.Counter(counter, 'learner')
@@ -444,12 +446,14 @@ class MultiAgentDistributedDDPG:
 
         # Create the behavior policy.        
         networks = self._networks
-        networks.init(self._environment_spec)
+        
+        for network in networks:
+            network.init(self._environment_spec)
 
-        policy_networks = networks.make_policy(
-            environment_spec=self._environment_spec,
-            sigma=self._config.sigma,
-        )
+        policy_networks = [
+            network.make_policy(environment_spec=self._environment_spec, sigma=self._config.sigma)
+            for network in networks
+        ]
         
         # Create the environment
         environment = self._environment_factory(False)
@@ -488,16 +492,19 @@ class MultiAgentDistributedDDPG:
 
         # Create the behavior policy.
         networks = self._networks
-        networks.init(self._environment_spec)
-        vehicle_policy_network, edge_policy_network = networks.make_policy(self._environment_spec)
-
+        for network in networks:
+            network.init(self._environment_spec)
+        
+        policy_networks = [
+            network.make_policy(self._environment_spec) for network in networks
+        ]
+        
         # Make the environment
         environment = self._environment_factory(True)
 
         # Create the agent.
         actor = self._agent.make_actor(
-            vehicle_policy_network=vehicle_policy_network,
-            edge_policy_network=edge_policy_network,
+            policy_networks=policy_networks,
             variable_source=variable_source,
         )
 
