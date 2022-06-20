@@ -2,7 +2,6 @@ import pandas as pd
 import numpy as np
 import time
 from typing import List, Optional
-from Environment.dataStruct import edgeAction, vehicle, edge, vehicleList, edgeList, taskList, task
 
 class vehicleTrajectoriesProcessor(object):
     def __init__(

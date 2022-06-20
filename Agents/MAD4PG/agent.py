@@ -1,4 +1,7 @@
 """D3PG agent implementation."""
+import sys
+sys.path.append(r"/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/")
+
 import copy
 import dataclasses
 from typing import Callable, Iterator, List, Optional, Tuple, Union, Sequence
@@ -320,7 +323,7 @@ class MAD3PGAgent(agent.Agent):
     ):
         """Creates an instance of the learner."""
         # The learner updates the parameters (and initializes them).
-        return learning.D3PGLearner(
+        return learning.MAD3PGLearner(
             policy_networks=online_networks.policy_networks,
             critic_networks=online_networks.critic_networks,
 

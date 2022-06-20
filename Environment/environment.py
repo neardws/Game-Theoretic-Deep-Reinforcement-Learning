@@ -37,7 +37,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         )
         
         self._vehicle_list: vehicleList = vehicleList(
-            number=self._config.vehicle_number,
+            vehicles_number_rate=self._config.vehicles_number_rate,
             time_slots=self._time_slots,
             trajectories_file_name=self._config.trajectories_out_file_name,
             slot_number=self._config.time_slot_number,

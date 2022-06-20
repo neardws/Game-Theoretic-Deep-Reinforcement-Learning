@@ -71,21 +71,18 @@ class taskList(object):
         tasks_number: int, 
         minimum_data_size: float, 
         maximum_data_size: float,
-        minimum_computation_cycles: float,
-        maximum_computation_cycles: float,
+        computation_cycles: float,
         seed: int
     ) -> None:
         self._tasks_number = tasks_number
         self._minimum_data_size = minimum_data_size
         self._maximum_data_size = maximum_data_size
-        self._minimum_computation_cycles = minimum_computation_cycles
-        self._maximum_computation_cycles = maximum_computation_cycles
+        self._computation_cycles = computation_cycles
         self._seed = seed
         np.random.seed(seed)
         self._data_sizes = np.random.uniform(minimum_data_size, maximum_data_size, tasks_number)
         np.random.seed(seed)
-        self._computation_cycles = np.random.uniform(minimum_computation_cycles, maximum_computation_cycles, tasks_number)
-        self._task_list = [task(task_index, data_size, computation_cycles) for task_index, data_size, computation_cycles in zip(range(tasks_number), self._data_sizes, self._computation_cycles)]
+        self._task_list = [task(task_index, data_size, self._computation_cycles) for task_index, data_size in zip(range(tasks_number), self._data_sizes)]
     
     def get_task_list(self) -> List[task]:
         return self._task_list
@@ -120,7 +117,6 @@ class location(object):
             (self._x - location.get_x())**2 + 
             (self._y - location.get_y())**2
         )
-
 
 class trajectory(object):
     """ the trajectory of the node. """
@@ -250,16 +246,13 @@ class vehicle(object):
         self, 
         vehicle_index: int,
         vehicle_trajectory: trajectory,
-        maximum_power: float,
         slot_number: int,
         task_number: int,
         task_request_rate: float,
         seed: int,
     ) -> None:
         self._vehicle_index = vehicle_index
-        self._vehicle_trajectory = vehicle_trajectory
-        self._maximum_power = maximum_power
-        
+        self._vehicle_trajectory = vehicle_trajectory        
         self._slot_number = slot_number
         self._task_number = task_number
         self._task_request_rate = task_request_rate
@@ -269,8 +262,6 @@ class vehicle(object):
 
     def get_vehicle_index(self) -> int:
         return int(self._vehicle_index)
-    def get_maximum_power(self) -> float:
-        return float(self._maximum_power)
     def get_requested_tasks(self) -> List[int]:
         return self._requested_tasks
     def get_requested_task_by_slot_index(self, slot_index) -> int:
@@ -298,7 +289,7 @@ class vehicle(object):
 class vehicleList(object):
     def __init__(
         self,
-        vehicles_number: int,
+        vehicles_number_rate: float,
         time_slots: timeSlots,
         trajectories_file_name: str,        
         slot_number: int,
@@ -306,7 +297,8 @@ class vehicleList(object):
         task_request_rate: float,
         seeds: List[int]
     ) -> None:
-        self._vehicles_number = vehicles_number
+        self._vehicles_number_rate = vehicles_number_rate
+        self._vehicles_number = 0
         self._trajectories_file_name = trajectories_file_name
         self._slot_number = slot_number
         self._task_number = task_number
@@ -315,7 +307,17 @@ class vehicleList(object):
         
         self._vehicle_trajectories = self.read_vehicle_trajectories(time_slots)
 
-        self._vehicle_list = [vehicle(vehicle_index, vehicle_trajectory, slot_number, task_number, task_request_rate, seed) for vehicle_index, vehicle_trajectory, seed in zip(range(vehicles_number), self._vehicle_trajectories, self._seeds)]
+        self._vehicle_list = [
+            vehicle(
+                vehicle_index=vehicle_index, 
+                vehicle_trajectory=vehicle_trajectory, 
+                slot_number=self._slot_number, 
+                task_number=self._task_number, 
+                task_request_rate=self._task_request_rate, 
+                seed=seed) 
+            for vehicle_index, vehicle_trajectory, seed in zip(
+                range(self._vehicles_number), self._vehicle_trajectories, self._seeds)
+        ]
     
     def get_vehicle_number(self) -> int:
         return int(self._vehicles_number)
@@ -338,6 +340,8 @@ class vehicleList(object):
 
         max_vehicle_id = df['vehicle_id'].max()
 
+        self._vehicles_number = int(max_vehicle_id * self._vehicles_number_rate)
+        
         selected_vehicle_id = []
         for vehicle_id in range(int(max_vehicle_id)):
             new_df = df[df['vehicle_id'] == vehicle_id]
@@ -355,7 +359,7 @@ class vehicleList(object):
         selected_vehicle_id.sort(key=lambda x : x["distance"], reverse=True)
         new_vehicle_id = 0
         vehicle_trajectories: List[trajectory] = []
-        for vehicle_id in selected_vehicle_id[ : self._number]:
+        for vehicle_id in selected_vehicle_id[ : self._vehicles_number]:
             new_df = df[df['vehicle_id'] == vehicle_id["vehicle_id"]]
             loc_list: List[location] = []
             for row in new_df.itertuples():
@@ -383,9 +387,9 @@ class edgeAction(object):
         maximum_vehicle_number: int,
         now_vehicle_number: int,      # the vehicle within the edge
         now_vehicle_index: List[int],
-        transmission_power_allocation: np.array,
-        task_assignment: np.array,
-        computation_resource_allocation: np.array,
+        transmission_power_allocation: np.ndarray,
+        task_assignment: np.ndarray,
+        computation_resource_allocation: np.ndarray,
         action_time: int) -> None:
 
         self._edge_index = edge_index
@@ -408,11 +412,11 @@ class edgeAction(object):
         return int(self._now_vehicle_number)
     def get_now_vehicle_index(self) -> List[int]:
         return self._now_vehicle_index
-    def get_transmission_power_allocation(self) -> np.array:
+    def get_transmission_power_allocation(self) -> np.ndarray:
         return self._transmission_power_allocation
-    def get_task_assignment(self) -> np.array:
+    def get_task_assignment(self) -> np.ndarray:
         return self._task_assignment
-    def get_computing_resource_allocation(self) -> np.array:
+    def get_computing_resource_allocation(self) -> np.ndarray:
         return self._computation_resource_allocation
     def get_action_time(self) -> int:
         return int(self._action_time)

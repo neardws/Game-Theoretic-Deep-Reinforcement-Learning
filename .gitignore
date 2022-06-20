@@ -131,3 +131,4 @@ dmypy.json
 # CSV files
 ./CSV/*
 CSV/* 
+CSV/

@@ -1,6 +1,6 @@
 """Shared helpers for different experiment flavours."""
-
-from typing import Mapping, Sequence, Optional
+from acme.types import NestedSpec
+from typing import Sequence, Optional
 from acme import types
 from acme.tf import networks
 from acme.tf import utils as tf2_utils
@@ -28,7 +28,7 @@ def make_policy_network(
 
 
 def make_default_MAD3PGNetworks(
-    action_spec: Optional[None] = None,
+    action_spec: Optional[NestedSpec] = None,
     policy_layer_sizes: Sequence[int] = (128, 128, 128),
     critic_layer_sizes: Sequence[int] = (256, 256, 128),
     vmin: float = -150.,

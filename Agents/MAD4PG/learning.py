@@ -52,8 +52,8 @@ class MAD3PGLearner(acme.Learner):
         logger: Optional[loggers.Logger] = None,
         checkpoint: bool = True,
         
-        edge_number: int = None,
-        edge_action_size: int = None,
+        edge_number: Optional[int] = None,
+        edge_action_size: Optional[int] = None,
     ):
         """Initializes the learner.
 
