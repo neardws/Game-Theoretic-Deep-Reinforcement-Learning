@@ -1,5 +1,5 @@
 import dataclasses
-from typing import List
+from typing import List, Optional
 
 @dataclasses.dataclass
 class vehicularNetworkEnvConfig:
@@ -31,6 +31,7 @@ class vehicularNetworkEnvConfig:
     
     """Vehicle related."""
     vehicle_number_rate: float = 0.3
+    vehicle_number: Optional[int] = None 
     trajectories_file_name: str = 'CSV/trajectories_20161116_0800_0850.csv'
     task_request_rate: float = 0.3
     vehicle_seeds: List[int] = dataclasses.field(default_factory=list)

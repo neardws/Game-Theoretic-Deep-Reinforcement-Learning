@@ -4,7 +4,7 @@ import dm_env
 from dm_env import specs
 from acme.types import NestedSpec
 import numpy as np
-from typing import List, Tuple, NamedTuple
+from typing import List, Tuple, NamedTuple, Optional
 import Environment.environmentConfig as env_config
 from Environment.dataStruct import timeSlots, taskList, edgeList, vehicleList, edgeAction
 from Environment.utilities import rescale_the_list_to_small_than_one, generate_channel_fading_gain, compute_channel_condition, compute_transmission_rate, compute_SINR
@@ -14,7 +14,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     
     def __init__(
         self, 
-        envConfig: env_config.vehicularNetworkEnvConfig = None) -> None:
+        envConfig: Optional[env_config.vehicularNetworkEnvConfig] = None) -> None:
         """Initialize the environment."""
         if envConfig is None:
             self._config = env_config.vehicularNetworkEnvConfig()
@@ -28,18 +28,17 @@ class vehicularNetworkEnv(dm_env.Environment):
         )
         
         self._task_list: taskList = taskList(
-            task_number=self._config.task_number,
-            minimum_data_size=self._config.minimum_data_size,
-            maximum_data_size=self._config.maximum_data_size,
-            minimum_computation_cycles=self._config.minimum_computation_cycles,
-            maximum_computation_cycles=self._config.maximum_computation_cycles,
-            seed=self._config.seed,
+            tasks_number=self._config.task_number,
+            minimum_data_size=self._config.task_minimum_data_size,
+            maximum_data_size=self._config.task_maximum_data_size,
+            computation_cycles=self._config.task_computation_cycles,
+            seed=self._config.task_seed,
         )
         
         self._vehicle_list: vehicleList = vehicleList(
-            vehicles_number_rate=self._config.vehicles_number_rate,
+            vehicle_number=self._config.vehicle_number,
             time_slots=self._time_slots,
-            trajectories_file_name=self._config.trajectories_out_file_name,
+            trajectories_file_name=self._config.trajectories_file_name,
             slot_number=self._config.time_slot_number,
             task_number=self._config.task_number,
             task_request_rate=self._config.task_request_rate,
@@ -50,19 +49,19 @@ class vehicularNetworkEnv(dm_env.Environment):
             edge_number=self._config.edge_number,
             power=self._config.edge_power,
             bandwidth=self._config.edge_bandwidth,
-            minimum_computing_speed=self._config.edge_minimum_computing_speed,
-            maximum_computing_speed=self._config.edge_maximum_computing_speed,
+            minimum_computing_cycles=self._config.edge_minimum_computing_cycles,
+            maximum_computing_cycles=self._config.edge_maximum_computing_cycles,
             communication_range=self._config.communication_range,
             map_length=self._config.map_length,
             map_width=self._config.map_width,
             seed=self._config.edge_seed,
         )
         
-        self._action_size, self._observation_size, self._reward_size, \
-            self._critic_network_action_size = self._define_size_of_spaces()
-
         self._distance_matrix, self._radio_coverage_matrix, self._config.vehicle_number_within_edges, \
             self._vehicle_index_within_edges, self._maximum_vehicle_number_within_edges = self.init_distance_matrix_and_radio_coverage_matrix()
+        
+        self._action_size, self._observation_size, self._reward_size, \
+            self._critic_network_action_size = self._define_size_of_spaces()
         
         self._reward: np.ndarray = np.zeros(self._reward_size)
         
@@ -73,21 +72,21 @@ class vehicularNetworkEnv(dm_env.Environment):
         
     def _define_size_of_spaces(self) -> Tuple[int, int, int, int]:
         """The action space is transmison power, task assignment, and computing resources allocation"""
-        action_size = self._config.max_vehicle_number * 3
+        action_size = self._maximum_vehicle_number_within_edges * 3
         
         """The observation space is the location, task size, computing cycles of each vehicle, then the aviliable transmission power, and computation resoucers"""
-        observation_size = self._config.max_vehicle_number * 3 + 2
+        observation_size = self._maximum_vehicle_number_within_edges * 3 + 2
         
         """The reward space is the reward of each edge node and the gloabl reward
         reward[-1] is the global reward.
         reward[0:edge_number] are the edge rewards.
         """
-        reward_size = self._config._edge_number + 1
+        reward_size = self._config.edge_number + 1
         
         """Defined the shape of the action space in critic network"""
-        critici_network_action_size = self._config._edge_number * action_size
+        critici_network_action_size = self._config.edge_number * action_size
         
-        return action_size, observation_size, reward_size, critici_network_action_size
+        return int(action_size), int(observation_size), int(reward_size), int(critici_network_action_size)
         
     def reset(self) -> dm_env.TimeStep:
         """Resets the state of the environment and returns an initial observation.
@@ -134,7 +133,7 @@ class vehicularNetworkEnv(dm_env.Environment):
             self.generate_edge_action_from_np_array(
                 now_time=self._time_slots.now(),
                 edge_index=i,
-                maximum_vehicle_number=self._config.max_vehicle_number,
+                maximum_vehicle_number=self._maximum_vehicle_number_within_edges,
                 now_vehicle_number=now_vehicle_numbers[i],
                 now_vehicle_index=now_vehicle_indexs[i],
                 network_output=action[i, :],
@@ -294,7 +293,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     """Define the gloabl observation spaces."""
     def observation_spec(self) -> specs.BoundedArray:
         """Define and return the observation space."""
-        observation_shape = (self._config.edge_number, self._observation_size)
+        observation_shape = (int(self._config.edge_number), int(self._observation_size))
         return specs.BoundedArray(
             shape=observation_shape,
             dtype=float,

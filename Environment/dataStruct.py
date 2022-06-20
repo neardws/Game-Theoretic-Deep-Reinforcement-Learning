@@ -201,11 +201,11 @@ class edge(object):
 class edgeList(object):
     def __init__(
         self,
-        edges_number: int,
+        edge_number: int,
         power: float,
         bandwidth: float,
-        minimum_computing_speed: float,
-        maximum_computing_speed: float,
+        minimum_computing_cycles: float,
+        maximum_computing_cycles: float,
         communication_range: float,
         map_length: float,
         map_width: float,
@@ -213,11 +213,11 @@ class edgeList(object):
         uniformed: bool = True
         ) -> None:
         
-        self._edges_number = edges_number
+        self._edge_number = edge_number
         self._power = power
         self._bandwidth = bandwidth
-        self._minimum_computing_speed = minimum_computing_speed
-        self._maximum_computing_speed = maximum_computing_speed
+        self._minimum_computing_cycles = minimum_computing_cycles
+        self._maximum_computing_cycles = maximum_computing_cycles
         self._communication_range = communication_range
         self._map_length = map_length
         self._map_width = map_width
@@ -225,12 +225,12 @@ class edgeList(object):
         self._seed = seed
         if uniformed:
             np.random.seed(seed)
-            self._computing_speeds = np.random.uniform(minimum_computing_speed, maximum_computing_speed, edges_number)
+            self._computing_speeds = np.random.uniform(self._minimum_computing_cycles, self._maximum_computing_cycles, self._edge_number)
             np.random.seed(seed)
-            self._edge_xs = np.random.uniform(0, map_length, edges_number)
+            self._edge_xs = np.random.uniform(0, self._map_length, self._edge_number)
             np.random.seed(seed)
-            self._edge_ys = np.random.uniform(0, map_width, edges_number)
-            self._edge_list = [edge(edge_index, power, bandwidth, computing_speed, communication_range, edge_x, edge_y) for edge_index, computing_speed, edge_x, edge_y in zip(range(edges_number), self._computing_speeds, self._edge_xs, self._edge_ys)]
+            self._edge_ys = np.random.uniform(0, self._map_length, self._edge_number)
+            self._edge_list = [edge(edge_index, self._power, self._bandwidth, computing_speed, self._communication_range, edge_x, edge_y) for edge_index, computing_speed, edge_x, edge_y in zip(range(edge_number), self._computing_speeds, self._edge_xs, self._edge_ys)]
         else:
             pass
         
@@ -282,14 +282,14 @@ class vehicle(object):
         task_requested_time_slot_index = list(np.random.choice(self._slot_number, requested_task_number, replace=False))
         np.random.seed(self._seed)
         task_requested_task_index = list(np.random.choice(self._task_number, requested_task_number, replace=True))
-        for i in task_requested_time_slot_index:
-            requested_tasks[i] = task_requested_task_index[i]
+        for i in range(len(task_requested_time_slot_index)):
+            requested_tasks[task_requested_time_slot_index[i]] = task_requested_task_index[i]
         return requested_tasks
 
 class vehicleList(object):
     def __init__(
         self,
-        vehicles_number_rate: float,
+        vehicle_number: int,
         time_slots: timeSlots,
         trajectories_file_name: str,        
         slot_number: int,
@@ -297,8 +297,7 @@ class vehicleList(object):
         task_request_rate: float,
         seeds: List[int]
     ) -> None:
-        self._vehicles_number_rate = vehicles_number_rate
-        self._vehicles_number = 0
+        self._vehicle_number = vehicle_number
         self._trajectories_file_name = trajectories_file_name
         self._slot_number = slot_number
         self._task_number = task_number
@@ -316,11 +315,11 @@ class vehicleList(object):
                 task_request_rate=self._task_request_rate, 
                 seed=seed) 
             for vehicle_index, vehicle_trajectory, seed in zip(
-                range(self._vehicles_number), self._vehicle_trajectories, self._seeds)
+                range(self._vehicle_number), self._vehicle_trajectories, self._seeds)
         ]
     
     def get_vehicle_number(self) -> int:
-        return int(self._vehicles_number)
+        return int(self._vehicle_number)
     def get_slot_number(self) -> int:
         return int(self._slot_number)
     def get_task_number(self) -> int:
@@ -339,8 +338,6 @@ class vehicleList(object):
             names=['vehicle_id', 'time', 'longitude', 'latitude'], header=0)
 
         max_vehicle_id = df['vehicle_id'].max()
-
-        self._vehicles_number = int(max_vehicle_id * self._vehicles_number_rate)
         
         selected_vehicle_id = []
         for vehicle_id in range(int(max_vehicle_id)):
@@ -359,7 +356,7 @@ class vehicleList(object):
         selected_vehicle_id.sort(key=lambda x : x["distance"], reverse=True)
         new_vehicle_id = 0
         vehicle_trajectories: List[trajectory] = []
-        for vehicle_id in selected_vehicle_id[ : self._vehicles_number]:
+        for vehicle_id in selected_vehicle_id[ : self._vehicle_number]:
             new_df = df[df['vehicle_id'] == vehicle_id["vehicle_id"]]
             loc_list: List[location] = []
             for row in new_df.itertuples():
@@ -377,6 +374,13 @@ class vehicleList(object):
 
         return vehicle_trajectories
 
+
+def get_vehicle_number(trajectories_file_name) -> int:
+    df = pd.read_csv(
+        trajectories_file_name, 
+        names=['vehicle_id', 'time', 'longitude', 'latitude'], header=0)
+
+    return df['vehicle_id'].max()
 
 class edgeAction(object):
     """ the action of the edge. """

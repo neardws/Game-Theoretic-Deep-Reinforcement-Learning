@@ -113,8 +113,8 @@ class MAD3PGNetworks:
             emb_spec = utils.create_variables(self.observation_networks[_], [observation_spec])
 
             # Create variables for the policy and critic nets.
-            _ = utils.create_variables(self.policy_networks[_], [emb_spec])
-            _ = utils.create_variables(self.critic_networks[_], [emb_spec, critic_action_spec])
+            utils.create_variables(self.policy_networks[_], [emb_spec])
+            utils.create_variables(self.critic_networks[_], [emb_spec, critic_action_spec])
 
 
     def make_policy(
