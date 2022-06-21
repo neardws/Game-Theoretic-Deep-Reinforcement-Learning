@@ -99,8 +99,8 @@ class EnvironmentLoop(core.Worker):
         # and the initial timestep.
             observer.observe_first(self._environment, timestep)
         
-        select_action_time = 0
-        environment_step_time = 0
+        # select_action_time = 0
+        # environment_step_time = 0
         # transform_action_times = 0
         # compute_reward_times = 0
         # observation_times = 0
@@ -114,14 +114,16 @@ class EnvironmentLoop(core.Worker):
         
         while not timestep.last():
         # Generate an action from the agent's policy and step the environment.
-            time_start = time.time()
+            # time_start = time.time()
             action = self._actor.select_action(timestep.observation)
-            time_end = time.time()
-            select_action_time += time_end - time_start
-            time_start = time.time()
+            # print("action: \n")
+            # print(action)
+            # time_end = time.time()
+            # select_action_time += time_end - time_start
+            # time_start = time.time()
             timestep = self._environment.step(action)
-            time_end = time.time()
-            environment_step_time += time_end - time_start
+            # time_end = time.time()
+            # environment_step_time += time_end - time_start
         
             # transform_action_times += transform_action_time
             # compute_reward_times += compute_reward_time
@@ -154,9 +156,9 @@ class EnvironmentLoop(core.Worker):
                                                 episode_return,
                                                 timestep.reward)
 
-        print("_____________________________________________________")
-        print("select_action_time: ", select_action_time)
-        print("environment_step_time: ", environment_step_time)
+        # print("_____________________________________________________")
+        # print("select_action_time: ", select_action_time)
+        # print("environment_step_time: ", environment_step_time)
         # print("transform_action_times: ", transform_action_times)
         # print("compute_reward_times: ", compute_reward_times)
         # print("observation_times: ", observation_times)
@@ -166,7 +168,7 @@ class EnvironmentLoop(core.Worker):
         # print("reward_part_four_times: ", reward_part_four_times)
         # print("reward_part_five_times: ", reward_part_five_times)
         # print("reward_part_six_times: ", reward_part_six_times)
-        print("_____________________________________________________")
+        # print("_____________________________________________________")
         # Record counts.
         counts = self._counter.increment(episodes=1, steps=episode_steps)
 

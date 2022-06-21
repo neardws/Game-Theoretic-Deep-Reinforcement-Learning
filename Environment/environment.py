@@ -410,8 +410,8 @@ class vehicularNetworkEnv(dm_env.Environment):
                 observation[j][index] = float(data_size / self._config.task_maximum_data_size)
                 index += 1
                 observation[j][index] = float(computing_cycles / self._config.task_maximum_computation_cycles)
-            observation[j][-2] = self._occupied_power[j][self._time_slots.now()]
-            observation[j][-1] = self._occupied_computing_resources[j][self._time_slots.now()]
+            observation[j][-2] = self._occupied_power[j][self._time_slots.now()] / self._config.edge_power
+            observation[j][-1] = self._occupied_computing_resources[j][self._time_slots.now()] / self._config.edge_maximum_computing_cycles
         return observation
 
     def init_distance_matrix_and_radio_coverage_matrix(self) -> Tuple[np.ndarray, np.ndarray, List[List[List[int]]], int]:
