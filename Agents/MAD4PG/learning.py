@@ -141,7 +141,6 @@ class MAD3PGLearner(acme.Learner):
                 subdirectory='mad3pg_learner',
                 objects_to_save={
                     'counter': self._counter,
-
                     'policy': self._policy_networks,
                     'critic': self._critic_networks,
                     'observation': self._observation_networks,
@@ -185,7 +184,7 @@ class MAD3PGLearner(acme.Learner):
             # NOTE: the input of the edge_observation_network is 
             # [batch_size, edge_observation_size]
             a_t_dict = dict()
-            for i in tf.range(len(self._target_observation_networks)):
+            for i in range(len(self._target_observation_networks)):
                 observation = transitions.observation[:, i, :]
                 o_t = self._target_observation_networks[i](observation)
                 o_t = tree.map_structure(tf.stop_gradient, o_t)
@@ -222,7 +221,7 @@ class MAD3PGLearner(acme.Learner):
                     if i != 0 and i != edge_index:
                         dpg_a_t = tf.concat([dpg_a_t, tf.reshape(edge_a_t, shape=[batch_size, self._edge_number, self._edge_action_size])[:, i, :]], axis=1)
                     elif i != 0 and i == edge_index:
-                        dpg_a_t = tf.concat([dpg_a_t, self._edge_policy_networks[edge_index](o_t)], axis=1)
+                        dpg_a_t = tf.concat([dpg_a_t, self._policy_networks[edge_index](o_t)], axis=1)
                 
                 dpg_z_t = self._critic_networks[edge_index](o_t, dpg_a_t)
                 dpg_q_t = dpg_z_t.mean()
@@ -267,7 +266,7 @@ class MAD3PGLearner(acme.Learner):
             critic_gradients = [tf.clip_by_global_norm(critic_gradient, 40.)[0] for critic_gradient in critic_gradients]
 
         # Apply gradients.
-        for edge_index in tf.range(self._edge_number):
+        for edge_index in range(self._edge_number):
             self._policy_optimizers[edge_index].apply_gradients(
                 zip(policy_gradients[edge_index], policy_variables[edge_index]))
             self._critic_optimizers[edge_index].apply_gradients(

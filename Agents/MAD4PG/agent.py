@@ -4,7 +4,7 @@ sys.path.append(r"/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Lear
 
 import copy
 import dataclasses
-from typing import Callable, Iterator, List, Optional, Tuple, Union, Sequence
+from typing import Callable, Iterator, List, Optional, Union, Sequence
 import acme
 from acme import adders
 from acme import core
@@ -104,7 +104,7 @@ class MAD3PGNetwork:
     ):
         """Initialize the networks given an environment spec."""
         # Get observation and action specs.
-        observation_spec = environment_spec.edge_observation
+        observation_spec = environment_spec.edge_observations
         critic_action_spec = environment_spec.critic_actions
 
         # Create variables for the observation net and, as a side-effect, get a
@@ -132,7 +132,7 @@ class MAD3PGNetwork:
         if sigma > 0.0:
             stacks += [
                 network_utils.ClippedGaussian(sigma),
-                network_utils.ClipToSpec(environment_spec.actions),   # Clip to action spec.
+                network_utils.ClipToSpec(environment_spec.edge_actions),   # Clip to action spec.
             ]
                 
         # Return a network which sequentially evaluates everything in the stack.
@@ -166,7 +166,7 @@ class MAD3PGAgent(agent.Agent):
 
         if networks is None:
             online_networks = make_default_MAD3PGNetworks(
-                action_spec=environment_spec.edge_action,
+                action_spec=environment_spec.edge_actions,
             )
         else:
             online_networks = networks
@@ -177,13 +177,9 @@ class MAD3PGAgent(agent.Agent):
         target_networks = [copy.deepcopy(network) for network in online_networks]
 
         # Initialize the networks.
-        for online_network in online_networks:
-            online_network.init(environment_spec)
-        for target_network in target_networks:
-            target_network.init(environment_spec)
-        # for online_network, target_network in zip(online_networks, target_networks):
-        #     online_network.init(self._environment_spec)
-        #     target_network.init(self._environment_spec)
+        for online_network, target_network in zip(online_networks, target_networks):
+            online_network.init(self._environment_spec)
+            target_network.init(self._environment_spec)
 
         # Create the behavior policy.
         policy_networks = [online_network.make_policy(self._environment_spec, self._config.sigma) for online_network in online_networks]
@@ -290,7 +286,7 @@ class MAD3PGAgent(agent.Agent):
             # Create the variable client responsible for keeping the actor up-to-date.
             variables = dict()
             for i in range(len(policy_networks)):
-                variables['edge_' + str(i)] = policy_networks[i].variables
+                variables['policy_network_' + str(i)] = policy_networks[i].variables
             variable_client = variable_utils.VariableClient(
                 client=variable_source,
                 variables=variables,

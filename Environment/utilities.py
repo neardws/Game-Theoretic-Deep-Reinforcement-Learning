@@ -305,6 +305,18 @@ def compute_SINR(
     return (1.0 / (cover_dBm_to_W(white_gaussian_noise) + intra_edge_interference + inter_edge_interference)) * \
         channel_condition * cover_mW_to_W(transmission_power)
 
+def compute_SNR(
+    white_gaussian_noise: int,
+    channel_condition: float,
+    transmission_power: float,
+    intra_edge_interference: float,
+) -> float:
+    return (1.0 / (cover_dBm_to_W(white_gaussian_noise) + intra_edge_interference)) * \
+        channel_condition * cover_mW_to_W(transmission_power)
+
+def compute_edge_reward_with_SNR(SNR, bandwidth: float, data_size: float) -> float:
+    return data_size / cover_MHz_to_Hz(bandwidth) * np.log2(1 + SNR)
+
 def compute_transmission_rate(SINR, bandwidth) -> float:
     """
     :param SNR:

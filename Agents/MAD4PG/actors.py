@@ -60,8 +60,7 @@ class FeedForwardActor(core.Actor):
         # Compute the policy, conditioned on the observation.
         
         edge_actions = []
-        
-        for i in tf.range(self._edge_number):
+        for i in range(self._edge_number):
             edge_observation = observations[i, :]
             edge_batched_observation = tf2_utils.add_batch_dim(edge_observation)
             edge_policy = self._policy_networks[i](edge_batched_observation)

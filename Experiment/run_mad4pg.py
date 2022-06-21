@@ -17,7 +17,7 @@ def main(_):
 
     # Create the networks.
     networks = make_default_MAD3PGNetworks(
-        action_spec=spec.edge_action,
+        action_spec=spec.edge_actions,
     )
 
     agent_config = MAD3PGConfig()

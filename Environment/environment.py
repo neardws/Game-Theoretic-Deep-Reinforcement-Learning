@@ -1,5 +1,6 @@
 
 """Vehicular Network Environments."""
+import time 
 import dm_env
 from dm_env import specs
 from acme.types import NestedSpec
@@ -7,7 +8,7 @@ import numpy as np
 from typing import List, Tuple, NamedTuple, Optional
 import Environment.environmentConfig as env_config
 from Environment.dataStruct import timeSlots, taskList, edgeList, vehicleList, edgeAction
-from Environment.utilities import rescale_the_list_to_small_than_one, generate_channel_fading_gain, compute_channel_condition, compute_transmission_rate, compute_SINR
+from Environment.utilities import rescale_the_list_to_small_than_one, generate_channel_fading_gain, compute_channel_condition, compute_transmission_rate, compute_SINR, compute_SNR, compute_edge_reward_with_SNR
 
 class vehicularNetworkEnv(dm_env.Environment):
     """Vehicular Network Environment built on the dm_env framework."""
@@ -31,7 +32,8 @@ class vehicularNetworkEnv(dm_env.Environment):
             tasks_number=self._config.task_number,
             minimum_data_size=self._config.task_minimum_data_size,
             maximum_data_size=self._config.task_maximum_data_size,
-            computation_cycles=self._config.task_computation_cycles,
+            minimum_computation_cycles=self._config.task_minimum_computation_cycles,
+            maximum_computation_cycles=self._config.task_maximum_computation_cycles,
             seed=self._config.task_seed,
         )
         
@@ -57,7 +59,7 @@ class vehicularNetworkEnv(dm_env.Environment):
             seed=self._config.edge_seed,
         )
         
-        self._distance_matrix, self._radio_coverage_matrix, self._config.vehicle_number_within_edges, \
+        self._distance_matrix, self._vehicle_number_within_edges, \
             self._vehicle_index_within_edges, self._maximum_vehicle_number_within_edges = self.init_distance_matrix_and_radio_coverage_matrix()
         
         self._action_size, self._observation_size, self._reward_size, \
@@ -95,8 +97,8 @@ class vehicularNetworkEnv(dm_env.Environment):
         Returns the first `TimeStep` of a new episode.
         """
         self._time_slots.reset()
-        self._occupied_power = np.zeros(shape=(self._config.time_slot_number))
-        self._occupied_computing_resources = np.zeros(shape=(self._config.time_slot_number))
+        self._occupied_power = np.zeros(shape=(self._config.edge_number, self._config.time_slot_number))
+        self._occupied_computing_resources = np.zeros(shape=(self._config.edge_number, self._config.time_slot_number))
         self._reset_next_step = False
         return dm_env.restart(observation=self._observation())
 
@@ -109,18 +111,28 @@ class vehicularNetworkEnv(dm_env.Environment):
         if self._reset_next_step:
             return self.reset()
         
-        edge_actions = self.transform_action_array_to_actions(action)
-        self.compute_reward(edge_actions)      
+        time_start = time.time()
+        edge_actions = self.transform_action_array_to_actions(
+            action=action, 
+        )
+        time_end = time.time()
+        transform_action_time = time_end - time_start
+        time_start = time.time()
+        self.compute_reward(edge_actions)  
+        time_end = time.time()
+        compute_reward_time = time_end - time_start
+        time_start = time.time()
         observation = self._observation()
-        
+        time_end = time.time()
+        observation_time = time_end - time_start
         # check for termination
         if self._time_slots.is_end():
             self._reset_next_step = True
-            return dm_env.termination(observation=observation, reward=self._reward)
+            return dm_env.termination(observation=observation, reward=self._reward), transform_action_time, compute_reward_time, observation_time
         self._time_slots.add_time()
-        return dm_env.transition(observation=observation, reward=self._reward)
+        return dm_env.transition(observation=observation, reward=self._reward), transform_action_time, compute_reward_time, observation_time
 
-    def transform_action_array_to_actions(self, action: np.ndarray, now_vehicle_numbers: List[int], now_vehicle_indexs: List[List[int]]) -> List[edgeAction]:
+    def transform_action_array_to_actions(self, action: np.ndarray) -> List[edgeAction]:
         """Transform the action array to the actions of edge nodes.
         Args:
             action: the action of the agent.
@@ -128,14 +140,13 @@ class vehicularNetworkEnv(dm_env.Environment):
         Returns:
             actions: the list of edge node actions.
         """ 
-        
         edge_actions: List[edgeAction] = [
             self.generate_edge_action_from_np_array(
                 now_time=self._time_slots.now(),
                 edge_index=i,
                 maximum_vehicle_number=self._maximum_vehicle_number_within_edges,
-                now_vehicle_number=now_vehicle_numbers[i],
-                now_vehicle_index=now_vehicle_indexs[i],
+                now_vehicle_number=self._vehicle_number_within_edges[i][self._time_slots.now()],
+                now_vehicle_index=self._vehicle_index_within_edges[i][self._time_slots.now()],
                 network_output=action[i, :],
                 action_time=self._time_slots.now(),
             ) for i in range(self._config.edge_number)
@@ -182,12 +193,14 @@ class vehicularNetworkEnv(dm_env.Environment):
                         path_loss_exponent=self._config.path_loss_exponent,
                     )
                     
-            transmission_power_allocation = rescale_the_list_to_small_than_one(transmission_power_allocation[:now_uploading_task_number])
+            transmission_power_allocation = rescale_the_list_to_small_than_one(transmission_power_allocation[: int(now_uploading_task_number)])
             for vehicle_index, transmission_power in zip(now_uploading_vehicles, transmission_power_allocation):
                 self._vehicle_edge_transmission_power[vehicle_index][edge_index] = transmission_power * (the_edge.get_power() - self._occupied_power[edge_index][self._time_slots.now()])
             task_assignment = task_assignment[:now_uploading_task_number]
             for vehicle_index, task_assignment_value in zip(now_uploading_vehicles, task_assignment):
-                processing_edge_index = np.floor(task_assignment_value / (1 / self._config.edge_number))
+                task_assignment_value = 0.01 if task_assignment_value == 0 else task_assignment_value
+                task_assignment_value = 0.99 if task_assignment_value == 1 else task_assignment_value
+                processing_edge_index = int(np.floor(task_assignment_value / (1 / self._config.edge_number)))
                 self._vehicle_edge_task_assignment[vehicle_index][processing_edge_index] = 1
                 if processing_edge_index != edge_index:
                     task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(self._time_slots.now())
@@ -200,7 +213,7 @@ class vehicularNetworkEnv(dm_env.Environment):
             the_edge = self._edge_list.get_edge_by_index(edge_index)
             computation_resource_allocation = edge_action.get_computing_resource_allocation()
             task_assignment_number = self._vehicle_edge_task_assignment[:, edge_index].sum()
-            computation_resource_allocation = rescale_the_list_to_small_than_one(computation_resource_allocation[:task_assignment_number])
+            computation_resource_allocation = rescale_the_list_to_small_than_one(computation_resource_allocation[: int(task_assignment_number)])
             for vehicle_index, computation_resource in zip(np.where(self._vehicle_edge_task_assignment[:, edge_index] == 1)[0], computation_resource_allocation):
                 self._vehicle_edge_computation_resources[vehicle_index][edge_index] = computation_resource * (the_edge.get_computing_speed() - self._occupied_computing_resources[edge_index][self._time_slots.now()])
 
@@ -212,16 +225,20 @@ class vehicularNetworkEnv(dm_env.Environment):
                     task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(self._time_slots.now())
                     data_size = self._task_list.get_task_by_index(task_index).get_data_size()
                     computation_cycles = self._task_list.get_task_by_index(task_index).get_computation_cycles()
-                    self._vehicle_execution_time[vehicle_index] = float(data_size * computation_cycles / self._vehicle_edge_computation_resources[vehicle_index][edge_index])
-                    occupied_time = np.floor(data_size * computation_cycles / self._vehicle_edge_computation_resources[vehicle_index][edge_index])
-                    if occupied_time > 0:
-                        if self._time_slots.now() + self._config.slot_number < self._config.slot_number:
-                            for i in range(int(self._config.slot_number)):
-                                self._occupied_computing_resources[edge_index][self._time_slots.now() + i] += self._vehicle_edge_computation_resources[vehicle_index][edge_index]
-                        else:
-                            for i in range(int(self._config.slot_number - self._time_slots.now())):
-                                self._occupied_computing_resources[edge_index][self._time_slots.now() + i] += self._vehicle_edge_computation_resources[vehicle_index][edge_index]
-                    
+                    if self._vehicle_edge_computation_resources[vehicle_index][edge_index] != 0:
+                        self._vehicle_execution_time[vehicle_index] = float(data_size * computation_cycles / self._vehicle_edge_computation_resources[vehicle_index][edge_index])
+                    else:
+                        self._vehicle_execution_time[vehicle_index] = self._config.time_slot_number
+                    if self._vehicle_edge_computation_resources[vehicle_index][edge_index] != 0:
+                        occupied_time = np.floor(data_size * computation_cycles / self._vehicle_edge_computation_resources[vehicle_index][edge_index])
+                        if occupied_time > 0:
+                            if self._time_slots.now() + int(occupied_time) < self._config.time_slot_number:
+                                for i in range(int(occupied_time)):
+                                    self._occupied_computing_resources[edge_index][self._time_slots.now() + i] += self._vehicle_edge_computation_resources[vehicle_index][edge_index]
+                            else:
+                                for i in range(int(self._config.time_slot_number - 1 - self._time_slots.now())):
+                                    self._occupied_computing_resources[edge_index][self._time_slots.now() + i] += self._vehicle_edge_computation_resources[vehicle_index][edge_index]
+                        
         """Compute the inference"""
         for edge_index in range(self._config.edge_number):
             for vehicle_index in range(self._config.vehicle_number):
@@ -235,10 +252,10 @@ class vehicularNetworkEnv(dm_env.Environment):
                     for other_edge_index in range(self._config.edge_number):
                         if other_edge_index != edge_index:
                             for other_vehicle_index in range(self._config.vehicle_number):
-                                if self._vehicle_edge_transmission_power[other_edge_index][other_edge_index] != 0:
+                                if self._vehicle_edge_transmission_power[other_vehicle_index][other_edge_index] != 0:
                                     self._vehicle_inter_edge_inference[vehicle_index] += compute_channel_condition(
                                         generate_channel_fading_gain(self._config.mean_channel_fading_gain, self._config.second_moment_channel_fading_gain),
-                                        self._distance_between_vehicle_and_edge[other_vehicle_index, edge_index],
+                                        self._distance_matrix[other_vehicle_index][edge_index][self._time_slots.now()],
                                         self._config.path_loss_exponent,
                                     ) * self._vehicle_edge_transmission_power[other_vehicle_index][other_edge_index]
         
@@ -257,16 +274,20 @@ class vehicularNetworkEnv(dm_env.Environment):
                     transmission_rate = compute_transmission_rate(
                         SINR=self._vehicle_SINR[vehicle_index], 
                         bandwidth=self._config.edge_bandwidth)
-                    self._vehicle_transmission_time[vehicle_index] = float(data_size / transmission_rate)
-                    occupied_time = np.floor(data_size / transmission_rate)
-                    if occupied_time > 0:
-                        if self._time_slots.now() + occupied_time < self._config.slot_number:
-                            for i in range(int(occupied_time)):
-                                self._occupied_power[edge_index][self._time_slots.now() + i] += self._vehicle_edge_transmission_power[vehicle_index][edge_index]
-                        else:
-                            for i in range(int(self._config.slot_number - self._time_slots.now())):
-                                self._occupied_power[edge_index][self._time_slots.now() + i] += self._vehicle_edge_transmission_power[vehicle_index][edge_index]
-        
+                    if transmission_rate != 0:
+                        self._vehicle_transmission_time[vehicle_index] = float(data_size / transmission_rate)
+                    else:
+                        self._vehicle_transmission_time[vehicle_index] = self._config.time_slot_number
+                    if transmission_rate != 0:
+                        occupied_time = np.floor(data_size / transmission_rate)
+                        if occupied_time > 0:
+                            if self._time_slots.now() + int(occupied_time) < self._config.time_slot_number:
+                                for i in range(int(occupied_time)):
+                                    self._occupied_power[edge_index][self._time_slots.now() + i] += self._vehicle_edge_transmission_power[vehicle_index][edge_index]
+                            else:
+                                for i in range(int(self._config.time_slot_number - 1 - self._time_slots.now())):
+                                    self._occupied_power[edge_index][self._time_slots.now() + i] += self._vehicle_edge_transmission_power[vehicle_index][edge_index]
+            
         self._reward[-1] = - (np.sum(self._vehicle_transmission_time) + np.sum(self._vehicle_wired_transmission_time) + np.sum(self._vehicle_execution_time))
         
         for edge_index in range(self._config.edge_number):
@@ -274,9 +295,21 @@ class vehicularNetworkEnv(dm_env.Environment):
             for vehicle_index in self._vehicle_index_within_edges[edge_index][self._time_slots.now()]:
                 requested_task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(self._time_slots.now())
                 if requested_task_index != -1:
-                    edge_reward += self._vehicle_edge_transmission_power / self._vehicle_intar_edge_inference[vehicle_index] - self._vehicle_wired_transmission_time() - self._vehicle_execution_time()
+                    SNR = compute_SNR(
+                        white_gaussian_noise=self._config.white_gaussian_noise, 
+                        channel_condition=self._vehicle_edge_channel_condition[vehicle_index][edge_index],\
+                        transmission_power=self._vehicle_edge_transmission_power[vehicle_index][edge_index],
+                        intra_edge_interference=self._vehicle_intar_edge_inference[vehicle_index],
+                    )
+                    first_reward = compute_edge_reward_with_SNR(
+                        SNR=SNR, 
+                        bandwidth=self._config.edge_bandwidth,
+                        data_size=self._task_list.get_task_by_index(requested_task_index).get_data_size())
                     
+                    edge_reward += first_reward - self._vehicle_wired_transmission_time[vehicle_index] - self._vehicle_execution_time[vehicle_index]
+                                        
             self._reward[edge_index] = edge_reward
+
 
     """Define the action spaces of edge in critic network."""
     def critic_network_action_spec(self) -> specs.BoundedArray:
@@ -352,9 +385,9 @@ class vehicularNetworkEnv(dm_env.Environment):
         """
         observation = np.zeros((self._config.edge_number, self._observation_size,))
         for j in range(self._config.edge_number):
-            vehicle_number_in_edge = self._config.vehicle_number_within_edges[j][self._time_slots.now()]
+            vehicle_number_in_edge = self._vehicle_number_within_edges[j][self._time_slots.now()]
             index = 0
-            for i in range(vehicle_number_in_edge):
+            for i in range(int(vehicle_number_in_edge)):
                 vehicle_index = self._vehicle_index_within_edges[j][self._time_slots.now()][i]
                 distance = self._distance_matrix[vehicle_index][j][self._time_slots.now()]
                 task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index=vehicle_index).get_requested_task_by_slot_index(slot_index=self._time_slots.now())
@@ -364,16 +397,15 @@ class vehicularNetworkEnv(dm_env.Environment):
                 index += 1
                 observation[j][index] = float(data_size / self._config.task_maximum_data_size)
                 index += 1
-                observation[j][index] = float(computing_cycles / self._config.task_maximim_computation_cycles)
+                observation[j][index] = float(computing_cycles / self._config.task_maximum_computation_cycles)
             observation[j][-2] = self._occupied_power[j][self._time_slots.now()]
             observation[j][-1] = self._occupied_computing_resources[j][self._time_slots.now()]
         return observation
 
-    def init_distance_matrix_and_radio_coverage_matrix(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[List[List[int]]], int]:
+    def init_distance_matrix_and_radio_coverage_matrix(self) -> Tuple[np.ndarray, np.ndarray, List[List[List[int]]], int]:
         """Initialize the distance matrix and radio coverage."""
         matrix_shpae = (self._config.vehicle_number, self._config.edge_number, self._config.time_slot_number)
         distance_matrix = np.zeros(matrix_shpae)
-        radio_coverage_matrix = np.zeros(matrix_shpae)
         
         """Get the radio coverage information of each edge node."""
         vehicle_number_within_edges = np.zeros((self._config.edge_number, self._config.time_slot_number))
@@ -384,10 +416,9 @@ class vehicularNetworkEnv(dm_env.Environment):
                 for k in range(self._config.time_slot_number):
                     distance_matrix[i][j][k] = self._vehicle_list.get_vehicle_by_index(i).get_distance_between_edge(k, self._edge_list.get_edge_by_index(j).get_edge_location())
                     if distance_matrix[i][j][k] <= self._config.communication_range:
-                        radio_coverage_matrix[i][j][k] = 1
                         vehicle_number_within_edges[j][k] += 1
                         vehicle_index_within_edges[j][k].append(i)
-        return distance_matrix, radio_coverage_matrix, vehicle_number_within_edges, vehicle_index_within_edges, np.max(vehicle_number_within_edges)
+        return distance_matrix, vehicle_number_within_edges, vehicle_index_within_edges, np.max(vehicle_number_within_edges)
     
     def generate_edge_action_from_np_array(
         self, 
@@ -411,9 +442,9 @@ class vehicularNetworkEnv(dm_env.Environment):
             maximum_vehicle_number=maximum_vehicle_number,
             now_vehicle_number=now_vehicle_number,
             now_vehicle_index=now_vehicle_index,
-            transmission_power_allocation=network_output[: maximum_vehicle_number],
-            task_assignment=network_output[maximum_vehicle_number : maximum_vehicle_number * 2],
-            computation_resource_allocation=network_output[maximum_vehicle_number * 2 :],
+            transmission_power_allocation=network_output[: int(maximum_vehicle_number)],
+            task_assignment=network_output[int(maximum_vehicle_number) : int(maximum_vehicle_number) * 2],
+            computation_resource_allocation=network_output[int(maximum_vehicle_number) * 2 :],
             action_time=action_time,
         )
 
@@ -428,10 +459,10 @@ DiscreteArray = specs.DiscreteArray
 class EnvironmentSpec(NamedTuple):
     """Full specification of the domains used by a given environment."""
     observations: NestedSpec
-    edge_observation: NestedSpec
+    edge_observations: NestedSpec
     critic_actions: NestedSpec
     actions: NestedSpec
-    edge_action: NestedSpec
+    edge_actions: NestedSpec
     rewards: NestedSpec
     discounts: NestedSpec
 
@@ -440,9 +471,9 @@ def make_environment_spec(environment: vehicularNetworkEnv) -> EnvironmentSpec:
     """Returns an `EnvironmentSpec` describing values used by an environment."""
     return EnvironmentSpec(
         observations=environment.observation_spec(),
-        edge_observation=environment.edge_observation_spec(),
+        edge_observations=environment.edge_observation_spec(),
         critic_actions=environment.critic_network_action_spec(),
         actions=environment.action_spec(),
-        edge_action=environment.edge_action_spec(),
+        edge_actions=environment.edge_action_spec(),
         rewards=environment.reward_spec(),
         discounts=environment.discount_spec())

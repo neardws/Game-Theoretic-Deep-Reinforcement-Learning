@@ -71,23 +71,26 @@ class taskList(object):
         tasks_number: int, 
         minimum_data_size: float, 
         maximum_data_size: float,
-        computation_cycles: float,
+        minimum_computation_cycles: float,
+        maximum_computation_cycles: float,
         seed: int
     ) -> None:
         self._tasks_number = tasks_number
         self._minimum_data_size = minimum_data_size
         self._maximum_data_size = maximum_data_size
-        self._computation_cycles = computation_cycles
+        self._minimum_computation_cycles = minimum_computation_cycles
+        self._maximum_computation_cycles = maximum_computation_cycles
         self._seed = seed
         np.random.seed(seed)
-        self._data_sizes = np.random.uniform(minimum_data_size, maximum_data_size, tasks_number)
+        self._data_sizes = np.random.uniform(self._minimum_data_size , self._maximum_data_size, self._tasks_number)
         np.random.seed(seed)
-        self._task_list = [task(task_index, data_size, self._computation_cycles) for task_index, data_size in zip(range(tasks_number), self._data_sizes)]
+        self._computation_cycles = np.random.uniform(self._minimum_computation_cycles, self._maximum_computation_cycles, self._tasks_number)
+        self._task_list = [task(task_index, data_size, computation_cycle) for task_index, data_size, computation_cycle in zip(range(self._tasks_number), self._data_sizes, self._computation_cycles)]
     
     def get_task_list(self) -> List[task]:
         return self._task_list
-    def get_task_by_index(self, task_index) -> task:
-        return self._task_list[task_index]
+    def get_task_by_index(self, task_index: int) -> task:
+        return self._task_list[int(task_index)]
     
 class location(object):
     """ the location of the node. """
@@ -236,8 +239,8 @@ class edgeList(object):
         
     def get_edge_list(self) -> List[edge]:
         return self._edge_list
-    def get_edge_by_index(self, edge_index) -> edge:
-        return self._edge_list[edge_index]
+    def get_edge_by_index(self, edge_index: int) -> edge:
+        return self._edge_list[int(edge_index)]
 
 
 class vehicle(object):
@@ -264,7 +267,7 @@ class vehicle(object):
         return int(self._vehicle_index)
     def get_requested_tasks(self) -> List[int]:
         return self._requested_tasks
-    def get_requested_task_by_slot_index(self, slot_index) -> int:
+    def get_requested_task_by_slot_index(self, slot_index: int) -> int:
         return self._requested_tasks[slot_index]
     def get_vehicle_location(self, nowTimeSlot: int) -> location:
         return self._vehicle_trajectory.get_location(nowTimeSlot)
@@ -328,8 +331,8 @@ class vehicleList(object):
         return float(self._task_request_rate)
     def get_vehicle_list(self) -> List[vehicle]:
         return self._vehicle_list
-    def get_vehicle_by_index(self, vehicle_index) -> vehicle:
-        return self._vehicle_list[vehicle_index]
+    def get_vehicle_by_index(self, vehicle_index: int) -> vehicle:
+        return self._vehicle_list[int(vehicle_index)]
     
     def read_vehicle_trajectories(self, timeSlots: timeSlots) -> List[trajectory]:
 
