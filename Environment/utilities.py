@@ -1,7 +1,6 @@
 import pandas as pd
 import numpy as np
 import time
-from typing import List, Optional
 
 class vehicleTrajectoriesProcessor(object):
     def __init__(
@@ -258,21 +257,6 @@ class vehicleTrajectoriesProcessor(object):
     def get_latitude_max(self) -> float:
         return self._latitude_max
     
-    
-def rescale_the_list_to_small_than_one(list_to_rescale: List[float], is_sum_equal_one: Optional[bool] = False) -> List[float]:
-        """ rescale the list small than one.
-        Args:
-            list_to_rescale: list to rescale.
-        Returns:
-            rescaled list.
-        """
-        if is_sum_equal_one:
-            maximum_sum = sum(list_to_rescale)
-        else:
-            maximum_sum = sum(list_to_rescale) + 0.00001
-        return [x / maximum_sum for x in list_to_rescale]   # rescale the list to small than one.
-
-
 def compute_channel_condition(
     channel_fading_gain: float,
     distance: float,
