@@ -384,34 +384,3 @@ def get_vehicle_number(trajectories_file_name) -> int:
         names=['vehicle_id', 'time', 'longitude', 'latitude'], header=0)
 
     return df['vehicle_id'].max()
-
-class edgeAction(object):
-    """ the action of the edge. """
-    def __init__(
-        self, 
-        edge_index: int,
-        now_time: int,
-        transmission_power_allocation: np.ndarray,
-        task_assignment: np.ndarray,
-        computation_resource_allocation: np.ndarray,
-        action_time: int) -> None:
-
-        self._edge_index = edge_index
-        self._now_time = now_time
-        self._transmission_power_allocation = transmission_power_allocation
-        self._task_assignment = task_assignment
-        self._computation_resource_allocation = computation_resource_allocation
-        self._action_time = action_time
-
-    def get_edge_index(self) -> int:
-        return int(self._edge_index)
-    def get_now_time(self) -> int:
-        return int(self._now_time)
-    def get_transmission_power_allocation(self) -> np.ndarray:
-        return self._transmission_power_allocation
-    def get_task_assignment(self) -> np.ndarray:
-        return self._task_assignment
-    def get_computing_resource_allocation(self) -> np.ndarray:
-        return self._computation_resource_allocation
-    def get_action_time(self) -> int:
-        return int(self._action_time)

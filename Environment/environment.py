@@ -7,7 +7,7 @@ from acme.types import NestedSpec
 import numpy as np
 from typing import List, Tuple, NamedTuple, Optional
 import Environment.environmentConfig as env_config
-from Environment.dataStruct import timeSlots, taskList, edgeList, vehicleList, edgeAction
+from Environment.dataStruct import timeSlots, taskList, edgeList, vehicleList
 from Environment.utilities import generate_channel_fading_gain, compute_channel_condition, compute_transmission_rate, compute_SINR, compute_SNR, compute_edge_reward_with_SNR
 
 class vehicularNetworkEnv(dm_env.Environment):
@@ -144,26 +144,6 @@ class vehicularNetworkEnv(dm_env.Environment):
             return dm_env.termination(observation=observation, reward=self._reward) 
         self._time_slots.add_time()
         return dm_env.transition(observation=observation, reward=self._reward)
-
-    def transform_action_array_to_actions(self, action: np.ndarray) -> List[edgeAction]:
-        """Transform the action array to the actions of edge nodes.
-        Args:
-            action: the action of the agent.
-                the shape of the action is (edge_number, action_size)
-        Returns:
-            actions: the list of edge node actions.
-        """ 
-        edge_actions: List[edgeAction] = [
-            self.generate_edge_action_from_np_array(
-                now_time=self._time_slots.now(),
-                edge_index=i,
-                maximum_vehicle_number=self._maximum_vehicle_number_within_edges,
-                network_output=action[i, :],
-                action_time=self._time_slots.now(),
-            ) for i in range(self._config.edge_number)
-        ]
-        
-        return edge_actions
 
     def compute_reward(
         self,
@@ -410,11 +390,12 @@ class vehicularNetworkEnv(dm_env.Environment):
                 observation[j][index] = float(data_size / self._config.task_maximum_data_size)
                 index += 1
                 observation[j][index] = float(computing_cycles / self._config.task_maximum_computation_cycles)
+                index += 1
             observation[j][-2] = self._occupied_power[j][self._time_slots.now()] / self._config.edge_power
             observation[j][-1] = self._occupied_computing_resources[j][self._time_slots.now()] / self._config.edge_maximum_computing_cycles
         return observation
 
-    def init_distance_matrix_and_radio_coverage_matrix(self) -> Tuple[np.ndarray, np.ndarray, List[List[List[int]]], int]:
+    def init_distance_matrix_and_radio_coverage_matrix(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[List[List[int]]], int]:
         """Initialize the distance matrix and radio coverage."""
         matrix_shpae = (self._config.vehicle_number, self._config.edge_number, self._config.time_slot_number)
         distance_matrix = np.zeros(matrix_shpae)

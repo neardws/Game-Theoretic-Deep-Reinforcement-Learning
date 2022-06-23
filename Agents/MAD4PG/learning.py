@@ -16,6 +16,7 @@ import tensorflow as tf
 import tree
 import tensorflow as tf
 from acme import types
+from Agents.MAD4PG.gradient import GradientTape
 
 Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
 
@@ -117,8 +118,8 @@ class MAD3PGLearner(acme.Learner):
             self._target_update_period = target_update_period
 
             # Create optimizers if they aren't given.
-            self._policy_optimizers = [policy_optimizer or snt.optimizers.Adam(1e-4) for policy_optimizer in policy_optimizers]
-            self._critic_optimizers = [critic_optimizer or snt.optimizers.Adam(1e-4) for critic_optimizer in critic_optimizers]
+            self._policy_optimizers = policy_optimizers or [snt.optimizers.Adam(learning_rate=1e-4) for _ in range(edge_number)]
+            self._critic_optimizers = critic_optimizers or [snt.optimizers.Adam(learning_rate=1e-4) for _ in range(edge_number)]
 
         # Batch dataset and create iterator.
         self._iterator = dataset_iterator
@@ -169,29 +170,28 @@ class MAD3PGLearner(acme.Learner):
     @tf.function
     def _step(self, sample) -> Dict[str, tf.Tensor]:
         transitions: types.Transition = sample.data  # Assuming ReverbSample.
-
         # Cast the additional discount to match the environment discount dtype.
         discount = tf.cast(self._discount, dtype=tf.float64)
 
-        with tf.GradientTape(persistent=True) as tape:
+        with GradientTape(persistent=True) as tape:
             """Compute the loss for the policy and critic of edge nodes."""
-            critic_losses = []
-            policy_losses = []
+            critic_losses = [[] for _ in range(self._edge_number)]
+            policy_losses = [[] for _ in range(self._edge_number)]
             """Deal with the observations."""
             # the shpae of the transitions.observation is [batch_size, edge_number, edge_observation_size]
             batch_size = transitions.observation.shape[0]
             
             # NOTE: the input of the edge_observation_network is 
             # [batch_size, edge_observation_size]
-            a_t_dict = dict()
+            a_t_list = []
             for i in range(len(self._target_observation_networks)):
                 observation = transitions.observation[:, i, :]
                 o_t = self._target_observation_networks[i](observation)
                 o_t = tree.map_structure(tf.stop_gradient, o_t)
                 a_t = self._target_policy_networks[i](o_t)
-                a_t_dict[str(i)] = a_t
+                a_t_list.append(a_t)
             
-            edge_a_t = tf.concat([a_t_dict[str(i)] for i in range(len(self._target_observation_networks))], axis=1)
+            edge_a_t = tf.concat([a_t_list[i] for i in range(len(self._target_observation_networks))], axis=1)
             
             for edge_index in range(self._edge_number):
 
@@ -210,7 +210,7 @@ class MAD3PGLearner(acme.Learner):
                 # Critic loss.
                 critic_loss = losses.categorical(q_tm1, transitions.reward[:, edge_index],
                                                 discount * transitions.discount, q_t)
-                critic_losses.append(critic_loss)
+                critic_losses[edge_index].append(critic_loss)
 
                 # Actor learning
                 if edge_index == 0:
@@ -234,29 +234,30 @@ class MAD3PGLearner(acme.Learner):
                     tape=tape,
                     dqda_clipping=dqda_clipping,
                     clip_norm=self._clipping)
-                policy_losses.append(policy_loss)
-
-            """Compute the mean loss for the policy and critic of edges."""
-            critic_loss = tf.reduce_mean(tf.stack(critic_losses, axis=0))
-            policy_loss = tf.reduce_mean(tf.stack(policy_losses, axis=0))
-
+                policy_losses[edge_index].append(policy_loss)
+        
+            new_critic_losses = []
+            new_policy_losses = []
+            
+            for i in range(self._edge_number):
+                new_critic_losses.append(tf.reduce_mean(tf.stack(critic_losses[i], axis=0)))
+                new_policy_losses.append(tf.reduce_mean(tf.stack(policy_losses[i], axis=0)))
+        
         # Get trainable variables.
-        policy_variables = [policy_network.trainable_variables for policy_network in self._policy_networks]
+        policy_variables = [self._policy_networks[i].trainable_variables for i in range(self._edge_number)]
         critic_variables = [(
-            # In this agent, the critic loss trains the observation network.
-            observation_network.trainable_variables +
-            critic_network.trainable_variables) for observation_network, critic_network in zip(self._observation_networks, self._critic_networks)]
-
+            self._observation_networks[i].trainable_variables + self._critic_networks[i].trainable_variables
+        ) for i in range(self._edge_number)]
+        
         # Compute gradients.
         replica_context = tf.distribute.get_replica_context()
-
+        
         policy_gradients =  [average_gradients_across_replicas(
             replica_context,
-            tape.gradient(policy_losses[edge_index], policy_variables[edge_index])) for edge_index in range(self._edge_number)]
+            tape.gradient(new_critic_losses[edge_index], policy_variables[edge_index])) for edge_index in range(self._edge_number)]
         critic_gradients =  [average_gradients_across_replicas(
             replica_context,
-            tape.gradient(critic_losses[edge_index], critic_variables[edge_index])) for edge_index in range(self._edge_number)]
-
+            tape.gradient(new_critic_losses[edge_index], critic_variables[edge_index])) for edge_index in range(self._edge_number)]
         # Delete the tape manually because of the persistent=True flag.
         del tape
 
@@ -264,38 +265,34 @@ class MAD3PGLearner(acme.Learner):
         if self._clipping:
             policy_gradients = [tf.clip_by_global_norm(policy_gradient, 40.)[0] for policy_gradient in policy_gradients]
             critic_gradients = [tf.clip_by_global_norm(critic_gradient, 40.)[0] for critic_gradient in critic_gradients]
-
         # Apply gradients.
         for edge_index in range(self._edge_number):
-            self._policy_optimizers[edge_index].apply_gradients(
-                zip(policy_gradients[edge_index], policy_variables[edge_index]))
-            self._critic_optimizers[edge_index].apply_gradients(
-                zip(critic_gradients[edge_index], critic_variables[edge_index]))
-
+            self._policy_optimizers[edge_index].apply(
+                policy_gradients[edge_index], policy_variables[edge_index])
+            self._critic_optimizers[edge_index].apply(
+                critic_gradients[edge_index], critic_variables[edge_index])
         # Losses to track.
-        return {
-            'policy_losses': policy_losses,
-            'critic_losses': critic_losses,
-        }
+        object_to_return = dict()
+        for edge_index in range(self._edge_number):
+            object_to_return['policy_loss_' + str(edge_index)] = new_policy_losses[edge_index]
+            object_to_return['critic_loss_' + str(edge_index)] = new_critic_losses[edge_index]
+        
+        return object_to_return
 
     @tf.function
     def _replicated_step(self):
         # Update target network
         online_variables = [(
-            *observation_network.variables,
-            *critic_network.variables,
-            *policy_network.variables,) 
-            for observation_network, critic_network, policy_network in zip(
-                self._observation_networks, self._critic_networks, self._policy_networks
-            )]
+            *self._observation_networks[i].variables,
+            *self._critic_networks[i].variables,
+            *self._policy_networks[i].variables,
+        ) for i in range(len(self._observation_networks))]
         
         target_variables = [(
-            *observation_network.variables,
-            *critic_network.variables,
-            *policy_network.variables,) 
-            for observation_network, critic_network, policy_network in zip(
-                self._target_observation_networks, self._target_critic_networks, self._target_policy_networks
-            )]
+            *self._target_observation_networks[i].variables,
+            *self._target_critic_networks[i].variables,
+            *self._target_policy_networks[i].variables,
+        ) for i in range(len(self._target_observation_networks))]
         
         # Make online -> target network update ops.
         if tf.math.mod(self._num_steps, self._target_update_period) == 0:
@@ -312,6 +309,8 @@ class MAD3PGLearner(acme.Learner):
         # but the Tensors are replaced with replicated Tensors, one per accelerator.
         replicated_fetches = self._replicator.run(self._step, args=(sample,))
 
+        # print("replicated_fetches: ", replicated_fetches)
+        
         def reduce_mean_over_replicas(replicated_value):
             """Averages a replicated_value across replicas."""
             # The "axis=None" arg means reduce across replicas, not internal axes.

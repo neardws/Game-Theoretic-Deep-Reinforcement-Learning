@@ -6,9 +6,8 @@ from Environment.environment import vehicularNetworkEnv, make_environment_spec
 from Environment.environmentConfig import vehicularNetworkEnvConfig
 from Environment.dataStruct import get_vehicle_number
 from Agents.RANDOM import actors
+
 class ActorTest(absltest.TestCase):
-
-
     def test_feedforward(self):
 
         config = vehicularNetworkEnvConfig()

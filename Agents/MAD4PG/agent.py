@@ -62,8 +62,8 @@ class MAD3PGConfig:
     batch_size: int = 256
     prefetch_size: int = 4
     target_update_period: int = 4
-    policy_optimizers: List[snt.Optimizer] = dataclasses.field(default_factory=list)
-    critic_optimizers: List[snt.Optimizer] = dataclasses.field(default_factory=list)
+    policy_optimizers: Optional[List[snt.Optimizer]] = None
+    critic_optimizers: Optional[List[snt.Optimizer]] = None
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
     samples_per_insert: Optional[float] = 1.0
@@ -177,9 +177,9 @@ class MAD3PGAgent(agent.Agent):
         target_networks = [copy.deepcopy(network) for network in online_networks]
 
         # Initialize the networks.
-        for online_network, target_network in zip(online_networks, target_networks):
-            online_network.init(self._environment_spec)
-            target_network.init(self._environment_spec)
+        for i in range(len(online_networks)):
+            online_networks[i].init(self._environment_spec)
+            target_networks[i].init(self._environment_spec)
 
         # Create the behavior policy.
         policy_networks = [online_network.make_policy(self._environment_spec, self._config.sigma) for online_network in online_networks]
@@ -414,9 +414,9 @@ class MultiAgentDistributedDDPG:
             target_networks = [copy.deepcopy(network) for network in online_networks]
 
             # Initialize the networks.
-            for online_network, target_network in zip(online_networks, target_networks):
-                online_network.init(self._environment_spec)
-                target_network.init(self._environment_spec)
+            for i in range(len(online_networks)):
+                online_networks[i].init(self._environment_spec)
+                target_networks[i].init(self._environment_spec)
 
         dataset = self._agent.make_dataset_iterator(replay)
         counter = counting.Counter(counter, 'learner')
@@ -443,8 +443,8 @@ class MultiAgentDistributedDDPG:
         # Create the behavior policy.        
         networks = self._networks
         
-        for network in networks:
-            network.init(self._environment_spec)
+        for i in range(len(networks)):
+            networks[i].init(self._environment_spec)
 
         policy_networks = [
             network.make_policy(environment_spec=self._environment_spec, sigma=self._config.sigma)
@@ -488,8 +488,8 @@ class MultiAgentDistributedDDPG:
 
         # Create the behavior policy.
         networks = self._networks
-        for network in networks:
-            network.init(self._environment_spec)
+        for i in range(len(networks)):
+            networks[i].init(self._environment_spec)
         
         policy_networks = [
             network.make_policy(self._environment_spec) for network in networks
