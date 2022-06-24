@@ -1026,11 +1026,6 @@ class GradientTape(object):
         called with an unknown value.
         """
 
-        # print("%" * 32)
-        # print("target")
-        # print(target)
-        # print("sources")
-        # print(sources)
         if self._tape is None:
             raise RuntimeError("A non-persistent GradientTape can only be used to "
                                 "compute one set of gradients (or jacobians)")

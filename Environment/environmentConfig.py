@@ -46,3 +46,10 @@ class vehicularNetworkEnvConfig:
     path_loss_exponent: int = 3
     wired_transmission_rate: float = 100.0 * 1024 * 1024 # 1000 Mbps
     wired_transmission_discount: float = 0.0006667
+    
+    """Action related."""
+    maximum_vehicle_number_within_edges: Optional[int] = None
+    action_size: Optional[int] = None
+    observation_size: Optional[int] = None
+    reward_size: Optional[int] = None
+    critic_network_action_size: Optional[int] = None

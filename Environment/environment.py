@@ -1,6 +1,5 @@
 
 """Vehicular Network Environments."""
-import time 
 import dm_env
 from dm_env import specs
 from acme.types import NestedSpec
@@ -15,57 +14,91 @@ class vehicularNetworkEnv(dm_env.Environment):
     
     def __init__(
         self, 
-        envConfig: Optional[env_config.vehicularNetworkEnvConfig] = None) -> None:
+        envConfig: Optional[env_config.vehicularNetworkEnvConfig] = None,
+        time_slots: Optional[timeSlots] = None,
+        task_list: Optional[taskList] = None,
+        vehicle_list: Optional[vehicleList] = None,
+        edge_list: Optional[edgeList] = None,
+        distance_matrix: Optional[np.ndarray] = None, 
+        channel_condition_matrix: Optional[np.ndarray] = None, 
+        vehicle_index_within_edges: Optional[List[List[List[int]]]] = None,        
+    ) -> None:
         """Initialize the environment."""
         if envConfig is None:
+            from Environment.dataStruct import get_vehicle_number
             self._config = env_config.vehicularNetworkEnvConfig()
+            self._config.vehicle_number = int(get_vehicle_number(self._config.trajectories_file_name) * self._config.vehicle_number_rate) 
+            self._config.vehicle_seeds += [i for i in range(self._config.vehicle_number)]
+            self._config.maximum_vehicle_number_within_edges = int(get_maximum_vehicle_number(
+                env_config=self._config, 
+                vehicle_list=vehicle_list, 
+                edge_list=edge_list
+            ))
+            self._config.action_size, self._config.observation_size, self._config.reward_size, \
+                self._config.critic_network_action_size = define_size_of_spaces(self._config.maximum_vehicle_number_within_edges, self._config.edge_number)
         else:
             self._config = envConfig
-
-        self._time_slots: timeSlots = timeSlots(
-            start=self._config.time_slot_start,
-            end=self._config.time_slot_end,
-            slot_length=self._config.time_slot_length,
-        )
         
-        self._task_list: taskList = taskList(
-            tasks_number=self._config.task_number,
-            minimum_data_size=self._config.task_minimum_data_size,
-            maximum_data_size=self._config.task_maximum_data_size,
-            minimum_computation_cycles=self._config.task_minimum_computation_cycles,
-            maximum_computation_cycles=self._config.task_maximum_computation_cycles,
-            seed=self._config.task_seed,
-        )
+        if distance_matrix is None:
+            self._distance_matrix, self._channel_condition_matrix, self._vehicle_index_within_edges = init_distance_matrix_and_radio_coverage_matrix(
+                env_config=self._config,
+                vehicle_list=vehicle_list,
+                edge_list=edge_list,
+            )
+        else:
+            self._distance_matrix = distance_matrix
+            self._channel_condition_matrix = channel_condition_matrix
+            self._vehicle_index_within_edges = vehicle_index_within_edges
+            
         
-        self._vehicle_list: vehicleList = vehicleList(
-            vehicle_number=self._config.vehicle_number,
-            time_slots=self._time_slots,
-            trajectories_file_name=self._config.trajectories_file_name,
-            slot_number=self._config.time_slot_number,
-            task_number=self._config.task_number,
-            task_request_rate=self._config.task_request_rate,
-            seeds=self._config.vehicle_seeds,
-        )
+        if time_slots is None:
+            self._time_slots: timeSlots = timeSlots(
+                start=self._config.time_slot_start,
+                end=self._config.time_slot_end,
+                slot_length=self._config.time_slot_length,
+            )
+        else:
+            self._time_slots = time_slots
+        if task_list is None:
+            self._task_list: taskList = taskList(
+                tasks_number=self._config.task_number,
+                minimum_data_size=self._config.task_minimum_data_size,
+                maximum_data_size=self._config.task_maximum_data_size,
+                minimum_computation_cycles=self._config.task_minimum_computation_cycles,
+                maximum_computation_cycles=self._config.task_maximum_computation_cycles,
+                seed=self._config.task_seed,
+            )
+        else:
+            self._task_list = task_list
+        if vehicle_list is None:
+            self._vehicle_list: vehicleList = vehicleList(
+                vehicle_number=self._config.vehicle_number,
+                time_slots=self._time_slots,
+                trajectories_file_name=self._config.trajectories_file_name,
+                slot_number=self._config.time_slot_number,
+                task_number=self._config.task_number,
+                task_request_rate=self._config.task_request_rate,
+                seeds=self._config.vehicle_seeds,
+            )
+        else:
+            self._vehicle_list = vehicle_list
+        if edge_list is None:
+            self._edge_list: edgeList = edgeList(
+                edge_number=self._config.edge_number,
+                power=self._config.edge_power,
+                bandwidth=self._config.edge_bandwidth,
+                minimum_computing_cycles=self._config.edge_minimum_computing_cycles,
+                maximum_computing_cycles=self._config.edge_maximum_computing_cycles,
+                communication_range=self._config.communication_range,
+                edge_xs=[500, 1500, 2500, 500, 1500, 2500, 500, 1500, 2500],
+                edge_ys=[2500, 2500, 2500, 1500, 1500, 1500, 500, 500, 500],
+                seed=self._config.edge_seed,
+            )
+        else:
+            self._edge_list = edge_list
         
-        self._edge_list: edgeList = edgeList(
-            edge_number=self._config.edge_number,
-            power=self._config.edge_power,
-            bandwidth=self._config.edge_bandwidth,
-            minimum_computing_cycles=self._config.edge_minimum_computing_cycles,
-            maximum_computing_cycles=self._config.edge_maximum_computing_cycles,
-            communication_range=self._config.communication_range,
-            map_length=self._config.map_length,
-            map_width=self._config.map_width,
-            seed=self._config.edge_seed,
-        )
         
-        self._distance_matrix, self._channel_condition_matrix, self._vehicle_number_within_edges, \
-            self._vehicle_index_within_edges, self._maximum_vehicle_number_within_edges = self.init_distance_matrix_and_radio_coverage_matrix()
-        
-        self._action_size, self._observation_size, self._reward_size, \
-            self._critic_network_action_size = self._define_size_of_spaces()
-        
-        self._reward: np.ndarray = np.zeros(self._reward_size)
+        self._reward: np.ndarray = np.zeros(self._config.reward_size)
         
         self._occupied_power = np.zeros(shape=(self._config.edge_number, self._config.time_slot_number))
         self._occupied_computing_resources = np.zeros(shape=(self._config.edge_number, self._config.time_slot_number))
@@ -85,23 +118,6 @@ class vehicularNetworkEnv(dm_env.Environment):
         
         self._reset_next_step: bool = True
         
-    def _define_size_of_spaces(self) -> Tuple[int, int, int, int]:
-        """The action space is transmison power, task assignment, and computing resources allocation"""
-        action_size = self._maximum_vehicle_number_within_edges * 3
-        
-        """The observation space is the location, task size, computing cycles of each vehicle, then the aviliable transmission power, and computation resoucers"""
-        observation_size = self._maximum_vehicle_number_within_edges * 3 + 2
-        
-        """The reward space is the reward of each edge node and the gloabl reward
-        reward[-1] is the global reward.
-        reward[0:edge_number] are the edge rewards.
-        """
-        reward_size = self._config.edge_number + 1
-        
-        """Defined the shape of the action space in critic network"""
-        critici_network_action_size = self._config.edge_number * action_size
-        
-        return int(action_size), int(observation_size), int(reward_size), int(critici_network_action_size)
         
     def reset(self) -> dm_env.TimeStep:
         """Resets the state of the environment and returns an initial observation.
@@ -166,12 +182,12 @@ class vehicularNetworkEnv(dm_env.Environment):
         
         for edge_index in range(self._config.edge_number):
             
-            tasks_number_within_edge = int(self._vehicle_number_within_edges[edge_index][self._time_slots.now()])
             vehicle_index_within_edge = self._vehicle_index_within_edges[edge_index][self._time_slots.now()]
+            tasks_number_within_edge = len(vehicle_index_within_edge)
             the_edge = self._edge_list.get_edge_by_index(edge_index)
             
-            transmission_power_allocation = np.array(actions[edge_index, : int(self._maximum_vehicle_number_within_edges)])
-            task_assignment = np.array(actions[edge_index, int(self._maximum_vehicle_number_within_edges) : int(self._maximum_vehicle_number_within_edges) * 2])
+            transmission_power_allocation = np.array(actions[edge_index, : int(self._config.maximum_vehicle_number_within_edges)])
+            task_assignment = np.array(actions[edge_index, int(self._config.maximum_vehicle_number_within_edges) : int(self._config.maximum_vehicle_number_within_edges) * 2])
             
             input_array = transmission_power_allocation[: tasks_number_within_edge]
             power_allocation = np.exp(input_array) / np.sum(np.exp(input_array))
@@ -207,7 +223,7 @@ class vehicularNetworkEnv(dm_env.Environment):
 
             edge_computing_speed = self._edge_list.get_edge_by_index(edge_index).get_computing_speed()
             edge_occupied_computing_speed = self._occupied_computing_resources[edge_index][self._time_slots.now()]
-            computation_resource_allocation = np.array(actions[edge_index, int(self._maximum_vehicle_number_within_edges) * 2: ] )
+            computation_resource_allocation = np.array(actions[edge_index, int(self._config.maximum_vehicle_number_within_edges) * 2: ] )
             
             task_assignment_number = self._vehicle_edge_task_assignment[:, edge_index].sum()
             input_array = computation_resource_allocation[: int(task_assignment_number)]
@@ -280,6 +296,10 @@ class vehicularNetworkEnv(dm_env.Environment):
                             for i in range(int(self._config.time_slot_number - 1 - self._time_slots.now())):
                                 self._occupied_power[edge_index][self._time_slots.now() + i] += self._vehicle_edge_transmission_power[vehicle_index][edge_index]        
         
+        print("self._vehicle_transmission_time: ", self._vehicle_transmission_time)
+        print("self._vehicle_wired_transmission_time: ", self._vehicle_wired_transmission_time)
+        print("self._vehicle_execution_time: ", self._vehicle_execution_time)
+        
         self._reward[-1] = - (np.sum(self._vehicle_transmission_time) + np.sum(self._vehicle_wired_transmission_time) + np.sum(self._vehicle_execution_time))
         
         for edge_index in range(self._config.edge_number):
@@ -306,7 +326,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     """Define the action spaces of edge in critic network."""
     def critic_network_action_spec(self) -> specs.BoundedArray:
         """Define and return the action space."""
-        critic_network_action_shape = (self._critic_network_action_size, )
+        critic_network_action_shape = (self._config.critic_network_action_size, )
         return specs.BoundedArray(
             shape=(critic_network_action_shape),
             dtype=float,
@@ -318,7 +338,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     """Define the gloabl observation spaces."""
     def observation_spec(self) -> specs.BoundedArray:
         """Define and return the observation space."""
-        observation_shape = (int(self._config.edge_number), int(self._observation_size))
+        observation_shape = (self._config.edge_number, self._config.observation_size)
         return specs.BoundedArray(
             shape=observation_shape,
             dtype=float,
@@ -329,7 +349,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     
     def edge_observation_spec(self) -> specs.BoundedArray:
         """Define and return the observation space."""
-        observation_shape = (int(self._observation_size), )
+        observation_shape = (self._config.observation_size, )
         return specs.BoundedArray(
             shape=observation_shape,
             dtype=float,
@@ -341,7 +361,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     """Define the gloabl action spaces."""
     def action_spec(self) -> specs.BoundedArray:
         """Define and return the action space."""
-        action_shape = (self._config.edge_number, self._action_size)
+        action_shape = (self._config.edge_number, self._config.action_size)
         return specs.BoundedArray(
             shape=action_shape,
             dtype=float,
@@ -352,7 +372,7 @@ class vehicularNetworkEnv(dm_env.Environment):
 
     def edge_action_spec(self) -> specs.BoundedArray:
         """Define and return the action space."""
-        action_shape = (self._action_size, )
+        action_shape = (self._config.action_size, )
         return specs.BoundedArray(
             shape=action_shape,
             dtype=float,
@@ -364,7 +384,7 @@ class vehicularNetworkEnv(dm_env.Environment):
     def reward_spec(self):
         """Define and return the reward space."""
         return specs.Array(
-            shape=(self._reward_size,), 
+            shape=(self._config.reward_size,), 
             dtype=float, 
             name='rewards'
         )
@@ -372,15 +392,16 @@ class vehicularNetworkEnv(dm_env.Environment):
     def _observation(self) -> np.ndarray:
         """Return the observation of the environment."""
         """
-        observation_shape = (self._config.edge_number, self._observation_size)
+        observation_shape = (self._config.edge_number, self._config.observation_size)
         The observation space is the location, task size, and computation cycles of each vehicle, then the aviliable transmission power, and computation resoucers
         """
-        observation = np.zeros((self._config.edge_number, self._observation_size,))
+        observation = np.zeros(shape=(self._config.edge_number, self._config.observation_size))
         for j in range(self._config.edge_number):
-            vehicle_number_in_edge = self._vehicle_number_within_edges[j][self._time_slots.now()]
+            vehicle_index_within_edges = self._vehicle_index_within_edges[j][self._time_slots.now()]
+            vehicle_number_in_edge = len(vehicle_index_within_edges)
             index = 0
-            for i in range(int(vehicle_number_in_edge)):
-                vehicle_index = self._vehicle_index_within_edges[j][self._time_slots.now()][i]
+            for i in range(vehicle_number_in_edge):
+                vehicle_index = vehicle_index_within_edges[i]
                 distance = self._distance_matrix[vehicle_index][j][self._time_slots.now()]
                 task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index=vehicle_index).get_requested_task_by_slot_index(slot_index=self._time_slots.now())
                 data_size = self._task_list.get_task_by_index(task_index=task_index).get_data_size()
@@ -394,32 +415,6 @@ class vehicularNetworkEnv(dm_env.Environment):
             observation[j][-2] = self._occupied_power[j][self._time_slots.now()] / self._config.edge_power
             observation[j][-1] = self._occupied_computing_resources[j][self._time_slots.now()] / self._config.edge_maximum_computing_cycles
         return observation
-
-    def init_distance_matrix_and_radio_coverage_matrix(self) -> Tuple[np.ndarray, np.ndarray, np.ndarray, List[List[List[int]]], int]:
-        """Initialize the distance matrix and radio coverage."""
-        matrix_shpae = (self._config.vehicle_number, self._config.edge_number, self._config.time_slot_number)
-        distance_matrix = np.zeros(matrix_shpae)
-        channel_condition_matrix = np.zeros(matrix_shpae)
-        """Get the radio coverage information of each edge node."""
-        vehicle_number_within_edges = np.zeros((self._config.edge_number, self._config.time_slot_number))
-        vehicle_index_within_edges = [[[] for __ in range(self._config.time_slot_number)] for _ in range(self._config.edge_number)]
-
-        for i in range(self._config.vehicle_number):
-            for j in range(self._config.edge_number):
-                for k in range(self._config.time_slot_number):
-                    distance = self._vehicle_list.get_vehicle_by_index(i).get_distance_between_edge(k, self._edge_list.get_edge_by_index(j).get_edge_location())
-                    distance_matrix[i][j][k] = distance
-                    channel_condition_matrix[i][j][k] = compute_channel_condition(
-                        generate_channel_fading_gain(self._config.mean_channel_fading_gain, self._config.second_moment_channel_fading_gain),
-                        distance,
-                        self._config.path_loss_exponent,
-                    )
-                    if distance_matrix[i][j][k] <= self._config.communication_range:
-                        requested_task_index = self._vehicle_list.get_vehicle_by_index(i).get_requested_task_by_slot_index(k)
-                        if requested_task_index != -1:
-                            vehicle_number_within_edges[j][k] += 1
-                            vehicle_index_within_edges[j][k].append(i)
-        return distance_matrix, channel_condition_matrix, vehicle_number_within_edges, vehicle_index_within_edges, np.max(vehicle_number_within_edges)
 
 
 Array = specs.Array
@@ -448,3 +443,71 @@ def make_environment_spec(environment: vehicularNetworkEnv) -> EnvironmentSpec:
         edge_actions=environment.edge_action_spec(),
         rewards=environment.reward_spec(),
         discounts=environment.discount_spec())
+    
+
+def define_size_of_spaces(
+    maximum_vehicle_number_within_edges: int,
+    edge_number: int,
+) -> Tuple[int, int, int, int]:
+        """The action space is transmison power, task assignment, and computing resources allocation"""
+        action_size = maximum_vehicle_number_within_edges * 3
+        
+        """The observation space is the location, task size, computing cycles of each vehicle, then the aviliable transmission power, and computation resoucers"""
+        observation_size = maximum_vehicle_number_within_edges * 3 + 2
+        
+        """The reward space is the reward of each edge node and the gloabl reward
+        reward[-1] is the global reward.
+        reward[0:edge_number] are the edge rewards.
+        """
+        reward_size = edge_number + 1
+        
+        """Defined the shape of the action space in critic network"""
+        critici_network_action_size = edge_number * action_size
+        
+        return action_size, observation_size, reward_size, critici_network_action_size
+    
+    
+def init_distance_matrix_and_radio_coverage_matrix(
+        env_config: env_config,
+        vehicle_list: vehicleList,
+        edge_list: edgeList,
+    ) -> Tuple[np.ndarray, np.ndarray, List[List[List[int]]]]:
+        """Initialize the distance matrix and radio coverage."""
+        matrix_shpae = (env_config.vehicle_number, env_config.edge_number, env_config.time_slot_number)
+        distance_matrix = np.zeros(matrix_shpae)
+        channel_condition_matrix = np.zeros(matrix_shpae)
+        """Get the radio coverage information of each edge node."""
+        vehicle_index_within_edges = [[[] for __ in range(env_config.time_slot_number)] for _ in range(env_config.edge_number)]
+
+        for i in range(env_config.vehicle_number):
+            for j in range(env_config.edge_number):
+                for k in range(env_config.time_slot_number):
+                    distance = vehicle_list.get_vehicle_by_index(i).get_distance_between_edge(k, edge_list.get_edge_by_index(j).get_edge_location())
+                    distance_matrix[i][j][k] = distance
+                    channel_condition_matrix[i][j][k] = compute_channel_condition(
+                        generate_channel_fading_gain(env_config.mean_channel_fading_gain, env_config.second_moment_channel_fading_gain),
+                        distance,
+                        env_config.path_loss_exponent,
+                    )
+                    if distance_matrix[i][j][k] <= env_config.communication_range:
+                        requested_task_index = vehicle_list.get_vehicle_by_index(i).get_requested_task_by_slot_index(k)
+                        if requested_task_index != -1:
+                            vehicle_index_within_edges[j][k].append(i)
+        return distance_matrix, channel_condition_matrix, vehicle_index_within_edges
+    
+    
+def get_maximum_vehicle_number(
+        env_config: env_config,
+        vehicle_list: vehicleList,
+        edge_list: edgeList,
+    ) -> int:
+        vehicle_number_within_edges = np.zeros((env_config.edge_number, env_config.time_slot_number))
+        for k in range(env_config.time_slot_number):
+            for j in range(env_config.edge_number):
+                for i in range(env_config.vehicle_number):
+                    distance = vehicle_list.get_vehicle_by_index(i).get_distance_between_edge(k, edge_list.get_edge_by_index(j).get_edge_location())
+                    if distance <= env_config.communication_range:
+                        requested_task_index = vehicle_list.get_vehicle_by_index(i).get_requested_task_by_slot_index(k)
+                        if requested_task_index != -1:
+                            vehicle_number_within_edges[j][k] += 1
+        return np.max(vehicle_number_within_edges)

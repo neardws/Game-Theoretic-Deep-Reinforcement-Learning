@@ -210,8 +210,8 @@ class edgeList(object):
         minimum_computing_cycles: float,
         maximum_computing_cycles: float,
         communication_range: float,
-        map_length: float,
-        map_width: float,
+        edge_xs: List[float],
+        edge_ys: List[float],
         seed: int,
         uniformed: bool = True
         ) -> None:
@@ -222,17 +222,13 @@ class edgeList(object):
         self._minimum_computing_cycles = minimum_computing_cycles
         self._maximum_computing_cycles = maximum_computing_cycles
         self._communication_range = communication_range
-        self._map_length = map_length
-        self._map_width = map_width
+        self._edge_xs = edge_xs
+        self._edge_ys = edge_ys
         self._uniformed = uniformed
         self._seed = seed
         if uniformed:
             np.random.seed(seed)
             self._computing_speeds = np.random.uniform(self._minimum_computing_cycles, self._maximum_computing_cycles, self._edge_number)
-            np.random.seed(seed)
-            self._edge_xs = np.random.uniform(0, self._map_length, self._edge_number)
-            np.random.seed(seed)
-            self._edge_ys = np.random.uniform(0, self._map_length, self._edge_number)
             self._edge_list = [edge(edge_index, self._power, self._bandwidth, computing_speed, self._communication_range, edge_x, edge_y) for edge_index, computing_speed, edge_x, edge_y in zip(range(edge_number), self._computing_speeds, self._edge_xs, self._edge_ys)]
         else:
             pass
