@@ -60,16 +60,16 @@ class MAD3PGConfig:
         accelerator: 'TPU', 'GPU', or 'CPU'. If omitted, the first available accelerator type from ['TPU', 'GPU', 'CPU'] will be selected.
     """
     discount: float = 0.99
-    batch_size: int = 512
+    batch_size: int = 256
     prefetch_size: int = 4
-    target_update_period: int = 10
+    target_update_period: int = 100
     policy_optimizers: Optional[List[snt.Optimizer]] = None
     critic_optimizers: Optional[List[snt.Optimizer]] = None
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
-    samples_per_insert: Optional[float] = 16.0
+    samples_per_insert: Optional[float] = 1.0
     n_step: int = 5
-    sigma: float = 0.4
+    sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE
     counter: Optional[counting.Counter] = None

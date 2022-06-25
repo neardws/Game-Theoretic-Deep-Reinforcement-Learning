@@ -286,6 +286,13 @@ def compute_SINR(
     Returns:
         SNR: the SNR of the transmission
     """
+    # print("cover_dBm_to_W(white_gaussian_noise): ", cover_dBm_to_W(white_gaussian_noise))
+    # print("intra_edge_interference: ", intra_edge_interference)
+    # print("inter_edge_interference: ", inter_edge_interference)
+    # print("channel_condition: ", channel_condition)
+    # print("cover_mW_to_W(transmission_power): ", cover_mW_to_W(transmission_power))
+    # print("noise plus interference: ", (cover_dBm_to_W(white_gaussian_noise) + intra_edge_interference + inter_edge_interference))
+    # print("signal: ", channel_condition * cover_mW_to_W(transmission_power))
     return (1.0 / (cover_dBm_to_W(white_gaussian_noise) + intra_edge_interference + inter_edge_interference)) * \
         channel_condition * cover_mW_to_W(transmission_power)
 

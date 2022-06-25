@@ -23,10 +23,10 @@ class vehicularNetworkEnvConfig:
     
     """"Edge related."""
     edge_number: int = 9
-    edge_power: float = 500.0 # mW
+    edge_power: float = 1000.0 # mW
     edge_bandwidth: float = 10.0  # MHz
-    edge_minimum_computing_cycles: float = 1.0 * 1e9 # 0.1 GHz
-    edge_maximum_computing_cycles: float = 4.0 * 1e9 # 0.5 GHz
+    edge_minimum_computing_cycles: float = 1.0 * 1e9 # 1 GHz
+    edge_maximum_computing_cycles: float = 4.0 * 1e9 # 4 GHz
     communication_range: float = 500.0  # meters
     map_length: float = 3000.0  # meters
     map_width: float = 3000.0  # meters
@@ -44,7 +44,7 @@ class vehicularNetworkEnvConfig:
     mean_channel_fading_gain: float = 2.0 
     second_moment_channel_fading_gain: float = 0.4
     path_loss_exponent: int = 3
-    wired_transmission_rate: float = 100.0 * 1024 * 1024 # 1000 Mbps
+    wired_transmission_rate: float = 50.0 * 1024 * 1024 # 500 Mbps
     wired_transmission_discount: float = 0.0006667
     
     """Action related."""

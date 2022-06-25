@@ -72,6 +72,8 @@ class EnvironmentLoop(core.Worker):
         self._logger = logger or loggers.make_default_logger(label)
         self._should_update = should_update
         self._observers = observers
+        self._minimum_reward = np.inf
+        self._maximum_reward = -np.inf
 
     def run_episode(self) -> loggers.LoggingData:
         """Run one episode.
@@ -106,7 +108,10 @@ class EnvironmentLoop(core.Worker):
             # print("timestep.observation: ", timestep.observation[:, -2:])
             action = self._actor.select_action(timestep.observation)
             timestep = self._environment.step(action)
-            print("timestep.reward: ", timestep.reward)
+            # if timestep.reward[-1] > self._maximum_reward:
+            #     self._maximum_reward = timestep.reward[-1]
+            # if timestep.reward[-1] < self._minimum_reward:
+            #     self._minimum_reward = timestep.reward[-1]
             # Have the agent observe the timestep and let the actor update itself.
             self._actor.observe(action, next_timestep=timestep)
             for observer in self._observers:
@@ -127,6 +132,8 @@ class EnvironmentLoop(core.Worker):
             episode_return = tree.map_structure(operator.iadd,
                                                 episode_return,
                                                 timestep.reward)
+        # print("minimum_reward: ", self._minimum_reward)
+        # print("maximum_reward: ", self._maximum_reward)
         # Record counts.
         counts = self._counter.increment(episodes=1, steps=episode_steps)
 
