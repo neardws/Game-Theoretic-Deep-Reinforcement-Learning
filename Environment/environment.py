@@ -9,6 +9,7 @@ import Environment.environmentConfig as env_config
 from Environment.dataStruct import timeSlots, taskList, edgeList, vehicleList
 from Environment.utilities import generate_channel_fading_gain, compute_channel_condition, compute_transmission_rate, compute_SINR, compute_SNR, compute_edge_reward_with_SNR, cover_mW_to_W
 np.set_printoptions(threshold=np.inf)
+from Log.logger import myapp
 
 class vehicularNetworkEnv(dm_env.Environment):
     """Vehicular Network Environment built on the dm_env framework."""
@@ -108,6 +109,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         self._reset_next_step: bool = True
         self._flatten_space: bool = flatten_space
         
+        
     def reset(self) -> dm_env.TimeStep:
         """Resets the state of the environment and returns an initial observation.
         Returns: observation (object): the initial observation of the
@@ -119,6 +121,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         self._occupied_computing_resources = np.zeros(shape=(self._config.edge_number, self._config.time_slot_number))
         
         self._reset_next_step = False
+        
         return dm_env.restart(observation=self._observation())
 
     def step(self, action: np.ndarray):
@@ -128,19 +131,21 @@ class vehicularNetworkEnv(dm_env.Environment):
         """        
         if self._reset_next_step:
             return self.reset()
-        self._reward = self.compute_reward(action)
+        
+        self._reward, cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number = self.compute_reward(action)
+        
         observation = self._observation()
         # check for termination
         if self._time_slots.is_end():
             self._reset_next_step = True
-            return dm_env.termination(observation=observation, reward=self._reward) 
+            return dm_env.termination(observation=observation, reward=self._reward), cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number
         self._time_slots.add_time()
-        return dm_env.transition(observation=observation, reward=self._reward)
+        return dm_env.transition(observation=observation, reward=self._reward), cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number
 
     def compute_reward(
         self,
         action: np.ndarray,
-    ) -> np.ndarray:
+    ) -> Tuple[np.ndarray, float, float, float, float]:
         actions = np.array(action)
         
         # print("actions1: ", actions)
@@ -152,9 +157,13 @@ class vehicularNetworkEnv(dm_env.Environment):
         vehicle_transmission_time = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
         vehicle_execution_time = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
         vehicle_wired_transmission_time = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
+                
+        vehicle_service_time = np.zeros((self._config.vehicle_number, ))
         
         vehicle_intar_edge_inference = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
         vehicle_inter_edge_inference = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
+        
+        vehicle_interferences = np.zeros((self._config.vehicle_number, ))
         
         vehicle_edge_transmission_power = np.zeros((self._config.vehicle_number, self._config.edge_number))
         vehicle_edge_task_assignment = np.zeros((self._config.vehicle_number, self._config.edge_number))
@@ -196,10 +205,6 @@ class vehicularNetworkEnv(dm_env.Environment):
                     task_assignment[i] = 0.99
                 
                 processing_edge_index = int(np.floor(task_assignment[i] / (1 / edge_number)))
-                
-                # print("task_assignment[i]: ", task_assignment[i])
-                # print("edge_number: ", edge_number)
-                # print("processing_edge_index: ", processing_edge_index)
                 
                 vehicle_edge_task_assignment[vehicle_index][processing_edge_index] = 1
             
@@ -353,21 +358,40 @@ class vehicularNetworkEnv(dm_env.Environment):
             for vehicle_index in self._vehicle_index_within_edges[edge_index][self._time_slots.now()]:
                 rewards[-1] += -(vehicle_transmission_time[vehicle_index, -1] + vehicle_wired_transmission_time[vehicle_index, -1] + vehicle_execution_time[vehicle_index, -1])
                 for e in range(self._config.edge_number):
-                    if e != edge_index:
-                        rewards[e] += -(vehicle_transmission_time[vehicle_index, e] + vehicle_wired_transmission_time[vehicle_index, e] + vehicle_execution_time[vehicle_index, e])
+                    # if e != edge_index:
+                    rewards[e] += -(vehicle_transmission_time[vehicle_index, e] + vehicle_wired_transmission_time[vehicle_index, e] + vehicle_execution_time[vehicle_index, e])
         # print("*" * 32)
         # print("task_numbers:", task_numbers)
+        successful_serviced = 0
+        successful_serviced_time_thershold = 1
         for e in range(self._config.edge_number + 1):
             if task_numbers[e] != 0:
-                rewards[e] /= task_numbers[e]
+                rewards[e] /= task_numbers[-1]
         for e in range(self._config.edge_number):
             rewards[e] = rewards[-1] - rewards[e]
+            
+        for edge_index in range(self._config.edge_number):
+            for vehicle_index in self._vehicle_index_within_edges[edge_index][self._time_slots.now()]:
+                vehicle_service_time[vehicle_index] = vehicle_transmission_time[vehicle_index, -1] + vehicle_wired_transmission_time[vehicle_index, -1] + vehicle_execution_time[vehicle_index, -1]
+                if vehicle_service_time[vehicle_index] <= successful_serviced_time_thershold:
+                    successful_serviced += 1
+                vehicle_interferences[vehicle_index] = vehicle_intar_edge_inference[vehicle_index, -1] + vehicle_inter_edge_inference[vehicle_index, -1]
+        
+        cumulative_reward = rewards[-1]
+        average_vehicle_interference = np.sum(vehicle_interferences)
+        average_service_time = np.sum(vehicle_service_time)
+        task_required_number =  task_numbers[-1]
         # print("rewards:", rewards)
         # print("vehicle_SINR: ", vehicle_SINR)
-        # print("vehicle_transmission_time:", vehicle_transmission_time)
-        # print("vehicle_wired_transmission_time:", vehicle_wired_transmission_time)
-        # print("vehicle_execution_time:", vehicle_execution_time)
-        return rewards
+        myapp.info(f"\ntime: {self._time_slots.now()}")
+        myapp.info(f"\ntask_required_number: {task_required_number}")
+        myapp.info(f"\noccupied_power: {self._occupied_power}")
+        myapp.info(f"\noccupied_computing_resources: {self._occupied_computing_resources}")
+        myapp.info(f"\nvehicle_transmission_time:\n{vehicle_transmission_time[:, -1]}")
+        myapp.info(f"\nvehicle_wired_transmission_time:\n{vehicle_wired_transmission_time[:, -1]}")
+        myapp.info(f"\nvehicle_execution_time:\n{vehicle_execution_time[:, -1]}")
+
+        return rewards, cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number
         
 
     """Define the action spaces of edge in critic network."""

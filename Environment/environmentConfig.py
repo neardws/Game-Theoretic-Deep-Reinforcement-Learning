@@ -15,8 +15,8 @@ class vehicularNetworkEnvConfig:
     
     """Task related."""
     task_number: int = 100
-    task_minimum_data_size: float = 20 * 1024 * 1024 # 20 MB
-    task_maximum_data_size: float = 120 * 1024 * 1024 # 100 MB
+    task_minimum_data_size: float = 1 * 1024 * 1024 # 1 MB
+    task_maximum_data_size: float = 50 * 1024 * 1024 # 50 MB
     task_minimum_computation_cycles: float = 0.1
     task_maximum_computation_cycles: float = 2.5 # CPU cycles for processing 1-Byte of data
     task_seed: int = 0
@@ -36,7 +36,7 @@ class vehicularNetworkEnvConfig:
     vehicle_number_rate: float = 0.3
     vehicle_number: Optional[int] = None 
     trajectories_file_name: str = 'CSV/trajectories_20161116_0800_0850.csv'
-    task_request_rate: float = 0.3
+    task_request_rate: float = 0.2
     vehicle_seeds: List[int] = dataclasses.field(default_factory=list)
 
     """V2I Transmission related."""

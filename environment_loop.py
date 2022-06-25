@@ -72,8 +72,6 @@ class EnvironmentLoop(core.Worker):
         self._logger = logger or loggers.make_default_logger(label)
         self._should_update = should_update
         self._observers = observers
-        self._minimum_reward = np.inf
-        self._maximum_reward = -np.inf
 
     def run_episode(self) -> loggers.LoggingData:
         """Run one episode.
@@ -88,7 +86,13 @@ class EnvironmentLoop(core.Worker):
         # Reset any counts and start the environment.
         start_time = time.time()
         episode_steps = 0
-
+        
+        cumulative_rewards: float = 0
+        average_vehicle_interferences: float = 0
+        average_service_times: float = 0 
+        successful_serviceds: float = 0
+        task_required_numbers: float = 0
+        
         # For evaluation, this keeps track of the total undiscounted reward
         # accumulated during the episode.
         episode_return = tree.map_structure(_generate_zeros_from_spec,
@@ -107,11 +111,14 @@ class EnvironmentLoop(core.Worker):
         # Generate an action from the agent's policy and step the environment.
             # print("timestep.observation: ", timestep.observation[:, -2:])
             action = self._actor.select_action(timestep.observation)
-            timestep = self._environment.step(action)
-            # if timestep.reward[-1] > self._maximum_reward:
-            #     self._maximum_reward = timestep.reward[-1]
-            # if timestep.reward[-1] < self._minimum_reward:
-            #     self._minimum_reward = timestep.reward[-1]
+            timestep, cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number = self._environment.step(action)
+            
+            cumulative_rewards += cumulative_reward
+            average_vehicle_interferences += average_vehicle_interference
+            average_service_times += average_service_time
+            successful_serviceds += successful_serviced
+            task_required_numbers += task_required_number
+            
             # Have the agent observe the timestep and let the actor update itself.
             self._actor.observe(action, next_timestep=timestep)
             for observer in self._observers:
@@ -132,8 +139,6 @@ class EnvironmentLoop(core.Worker):
             episode_return = tree.map_structure(operator.iadd,
                                                 episode_return,
                                                 timestep.reward)
-        # print("minimum_reward: ", self._minimum_reward)
-        # print("maximum_reward: ", self._maximum_reward)
         # Record counts.
         counts = self._counter.increment(episodes=1, steps=episode_steps)
 
@@ -143,6 +148,10 @@ class EnvironmentLoop(core.Worker):
             'episode_length': episode_steps,
             'episode_return': episode_return,
             'steps_per_second': steps_per_second,
+            'cumulative_reward': cumulative_rewards,
+            'average_vehicle_interferences': average_vehicle_interferences / task_required_numbers,
+            'average_service_times': average_service_times / task_required_numbers,
+            'service_ratio': successful_serviceds / task_required_numbers,
         }
         result.update(counts)
         for observer in self._observers:
