@@ -65,10 +65,10 @@ class MAD3PGConfig:
     target_update_period: int = 100
     policy_optimizers: Optional[List[snt.Optimizer]] = None
     critic_optimizers: Optional[List[snt.Optimizer]] = None
-    min_replay_size: int = 1000
+    min_replay_size: int = 10000
     max_replay_size: int = 1000000
     samples_per_insert: Optional[float] = 1.0
-    n_step: int = 5
+    n_step: int = 1
     sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE

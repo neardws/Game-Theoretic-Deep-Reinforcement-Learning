@@ -13,7 +13,7 @@ logging.basicConfig()
 
 # myapp的初始化工作
 myapp = logging.getLogger('myapp')
-myapp.setLevel(logging.INFO)
+myapp.setLevel(logging.DEBUG)
 
 # 添加TimedRotatingFileHandler
 # 定义一个1天换一次log文件的handler

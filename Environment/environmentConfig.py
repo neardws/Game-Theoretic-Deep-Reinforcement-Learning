@@ -17,8 +17,8 @@ class vehicularNetworkEnvConfig:
     task_number: int = 100
     task_minimum_data_size: float = 1 * 1024 * 1024 # 1 MB
     task_maximum_data_size: float = 50 * 1024 * 1024 # 50 MB
-    task_minimum_computation_cycles: float = 0.1
-    task_maximum_computation_cycles: float = 2.5 # CPU cycles for processing 1-Byte of data
+    task_minimum_computation_cycles: float = 10
+    task_maximum_computation_cycles: float = 250 # CPU cycles for processing 1-Byte of data
     task_seed: int = 0
     
     """"Edge related."""
