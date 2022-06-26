@@ -19,6 +19,8 @@ class vehicularNetworkEnvConfig:
     task_maximum_data_size: float = 50 * 1024 * 1024 # 50 MB
     task_minimum_computation_cycles: float = 10
     task_maximum_computation_cycles: float = 250 # CPU cycles for processing 1-Byte of data
+    task_minimum_delay_thresholds: float = 3 # seconds
+    task_maximum_delay_thresholds: float = 10 # seconds
     task_seed: int = 0
     
     """"Edge related."""

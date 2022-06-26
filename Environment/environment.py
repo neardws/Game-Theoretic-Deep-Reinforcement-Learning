@@ -69,6 +69,8 @@ class vehicularNetworkEnv(dm_env.Environment):
                 maximum_data_size=self._config.task_maximum_data_size,
                 minimum_computation_cycles=self._config.task_minimum_computation_cycles,
                 maximum_computation_cycles=self._config.task_maximum_computation_cycles,
+                minimum_delay_thresholds=self._config.task_minimum_delay_thresholds,
+                maximum_delay_thresholds=self._config.task_maximum_delay_thresholds,
                 seed=self._config.task_seed,
             )
         else:
@@ -157,8 +159,8 @@ class vehicularNetworkEnv(dm_env.Environment):
         vehicle_transmission_time = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
         vehicle_execution_time = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
         vehicle_wired_transmission_time = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
-                
-        vehicle_service_time = np.zeros((self._config.vehicle_number, ))
+        
+        vehicle_service_time = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
         
         vehicle_intar_edge_inference = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
         vehicle_inter_edge_inference = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
@@ -352,40 +354,38 @@ class vehicularNetworkEnv(dm_env.Environment):
                         else:
                             for i in range(start_time, int(self._config.time_slot_number)):
                                 self._occupied_power[edge_index][i] += vehicle_edge_transmission_power[vehicle_index][edge_index]        
-    
-        task_numbers = np.zeros(self._config.edge_number + 1)
+
+        task_requested_within_edge_number = 0
+        successful_serviced = np.zeros(self._config.edge_number + 1)        
         rewards = np.zeros(self._config.edge_number + 1)
+        
         for edge_index in range(self._config.edge_number):
-            task_numbers[-1] += len(self._vehicle_index_within_edges[edge_index][self._time_slots.now()])
-            for e in range(self._config.edge_number):
-                if e != edge_index:
-                    task_numbers[e] += len(self._vehicle_index_within_edges[edge_index][self._time_slots.now()])
             for vehicle_index in self._vehicle_index_within_edges[edge_index][self._time_slots.now()]:
-                rewards[-1] += -(vehicle_transmission_time[vehicle_index, -1] + vehicle_wired_transmission_time[vehicle_index, -1] + vehicle_execution_time[vehicle_index, -1])
+                task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(self._time_slots.now())
+                task_requested_within_edge_number += 1
+                task_service_time = vehicle_transmission_time[vehicle_index, -1] + vehicle_wired_transmission_time[vehicle_index, -1] + vehicle_execution_time[vehicle_index, -1]
+                vehicle_service_time[vehicle_index] = task_service_time
+                if task_service_time <= self._task_list.get_task_by_index(task_index).get_delay_threshold():
+                    successful_serviced[-1] += 1
+                
+                vehicle_interferences[vehicle_index] = vehicle_intar_edge_inference[vehicle_index, -1] + vehicle_inter_edge_inference[vehicle_index, -1]
+                
                 for e in range(self._config.edge_number):
                     if e != edge_index:
-                        rewards[e] += -(vehicle_transmission_time[vehicle_index, e] + vehicle_wired_transmission_time[vehicle_index, e] + vehicle_execution_time[vehicle_index, e])
-        # print("*" * 32)
-        # print("task_numbers:", task_numbers)
-        successful_serviced = 0
-        successful_serviced_time_thershold = 5
-        for e in range(self._config.edge_number + 1):
-            if task_numbers[e] != 0:
-                rewards[e] /= task_numbers[e]
-        for e in range(self._config.edge_number):
-            rewards[e] = rewards[-1] - rewards[e]
-            
+                        task_service_time = vehicle_transmission_time[vehicle_index, e] + vehicle_wired_transmission_time[vehicle_index, e] + vehicle_execution_time[vehicle_index, e]
+                        if task_service_time <= self._task_list.get_task_by_index(task_index).get_delay_threshold():
+                            successful_serviced[e] += 1
+
+        for edge_index in range(self._config.edge_number + 1):
+            rewards[edge_index] = successful_serviced[edge_index] / task_requested_within_edge_number
         for edge_index in range(self._config.edge_number):
-            for vehicle_index in self._vehicle_index_within_edges[edge_index][self._time_slots.now()]:
-                vehicle_service_time[vehicle_index] = vehicle_transmission_time[vehicle_index, -1] + vehicle_wired_transmission_time[vehicle_index, -1] + vehicle_execution_time[vehicle_index, -1]
-                if vehicle_service_time[vehicle_index] <= successful_serviced_time_thershold:
-                    successful_serviced += 1
-                vehicle_interferences[vehicle_index] = vehicle_intar_edge_inference[vehicle_index, -1] + vehicle_inter_edge_inference[vehicle_index, -1]
+            rewards[edge_index] = rewards[-1] - rewards[edge_index]
         
         cumulative_reward = rewards[-1]
         average_vehicle_interference = np.sum(vehicle_interferences)
         average_service_time = np.sum(vehicle_service_time)
-        task_required_number =  task_numbers[-1]
+        successful_serviced = successful_serviced[-1]
+        task_required_number =  task_requested_within_edge_number
         # print("rewards:", rewards)
         # print("vehicle_SINR: ", vehicle_SINR)
         
@@ -510,7 +510,10 @@ class vehicularNetworkEnv(dm_env.Environment):
                 observation[j][-2] = self._occupied_power[j][self._time_slots.now()] / ( 1.01 * self._config.edge_power)
                 observation[j][-1] = self._occupied_computing_resources[j][self._time_slots.now()] / ( 1.01 * self._config.edge_maximum_computing_cycles)
         if self._flatten_space:
-            observation = np.reshape(observation, newshape=(self._config.edge_number * self._config.observation_size, ))
+            if self._occuiped:
+                observation = np.reshape(observation, newshape=(self._config.edge_number * self._config.observation_size, ))
+            else:
+                observation = np.reshape(observation, newshape=(self._config.edge_number * (self._config.observation_size - 2), ))
         return observation
 
 

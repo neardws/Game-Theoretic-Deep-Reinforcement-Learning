@@ -60,15 +60,16 @@ class MAD3PGConfig:
         accelerator: 'TPU', 'GPU', or 'CPU'. If omitted, the first available accelerator type from ['TPU', 'GPU', 'CPU'] will be selected.
     """
     discount: float = 0.99
-    batch_size: int = 256
+    batch_size: int = 512
     prefetch_size: int = 4
-    target_update_period: int = 100
+    target_update_period: int = 1600
+    variable_update_period: int = 2000
     policy_optimizers: Optional[List[snt.Optimizer]] = None
     critic_optimizers: Optional[List[snt.Optimizer]] = None
-    min_replay_size: int = 10000
+    min_replay_size: int = 1000
     max_replay_size: int = 1000000
     samples_per_insert: Optional[float] = 1.0
-    n_step: int = 1
+    n_step: int = 5
     sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE
@@ -291,7 +292,7 @@ class MAD3PGAgent(agent.Agent):
             variable_client = variable_utils.VariableClient(
                 client=variable_source,
                 variables=variables,
-                update_period=1000,
+                update_period=self._config.variable_update_period,
             )
 
             # Make sure not to use a random policy after checkpoint restoration by

@@ -54,16 +54,19 @@ class timeSlots(object):
         self._now = self._start
         
 class task(object):
-    def __init__(self, task_index: int, data_size: float, computation_cycles: float) -> None:
+    def __init__(self, task_index: int, data_size: float, computation_cycles: float, delay_threshold: float) -> None:
         self._task_index = task_index
         self._data_size = data_size
         self._computation_cycles = computation_cycles
+        self._delay_threshold = delay_threshold
     def get_task_index(self) -> int:
         return int(self._task_index)
     def get_data_size(self) -> float:
         return float(self._data_size)
     def get_computation_cycles(self) -> float:
         return float(self._computation_cycles)
+    def get_delay_threshold(self) -> float:
+        return float(self._delay_threshold)
     
 class taskList(object):
     def __init__(
@@ -73,6 +76,8 @@ class taskList(object):
         maximum_data_size: float,
         minimum_computation_cycles: float,
         maximum_computation_cycles: float,
+        minimum_delay_thresholds: float,
+        maximum_delay_thresholds: float,
         seed: int
     ) -> None:
         self._tasks_number = tasks_number
@@ -80,12 +85,16 @@ class taskList(object):
         self._maximum_data_size = maximum_data_size
         self._minimum_computation_cycles = minimum_computation_cycles
         self._maximum_computation_cycles = maximum_computation_cycles
+        self._minimum_delay_thresholds = minimum_delay_thresholds
+        self._maximum_delay_thresholds = maximum_delay_thresholds
         self._seed = seed
         np.random.seed(seed)
         self._data_sizes = np.random.uniform(self._minimum_data_size , self._maximum_data_size, self._tasks_number)
         np.random.seed(seed)
         self._computation_cycles = np.random.uniform(self._minimum_computation_cycles, self._maximum_computation_cycles, self._tasks_number)
-        self._task_list = [task(task_index, data_size, computation_cycle) for task_index, data_size, computation_cycle in zip(range(self._tasks_number), self._data_sizes, self._computation_cycles)]
+        np.random.seed(seed)
+        self._delay_thresholds = np.random.uniform(self._minimum_delay_thresholds, self._maximum_delay_thresholds, self._tasks_number)
+        self._task_list = [task(task_index, data_size, computation_cycle, delay_thresholod) for task_index, data_size, computation_cycle, delay_thresholod in zip(range(self._tasks_number), self._data_sizes, self._computation_cycles, self._delay_thresholds)]
     
     def get_task_list(self) -> List[task]:
         return self._task_list
