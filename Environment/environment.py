@@ -180,7 +180,6 @@ class vehicularNetworkEnv(dm_env.Environment):
             the_edge = self._edge_list.get_edge_by_index(edge_index)
             
             transmission_power_allocation = np.array(actions[edge_index, : int(self._config.maximum_vehicle_number_within_edges)])
-            task_assignment = np.array(actions[edge_index, int(self._config.maximum_vehicle_number_within_edges) : int(self._config.maximum_vehicle_number_within_edges) * 2])
             
             input_array = transmission_power_allocation[: tasks_number_within_edge]
             power_allocation = np.exp(input_array) / np.sum(np.exp(input_array))
@@ -199,16 +198,15 @@ class vehicularNetworkEnv(dm_env.Environment):
                     vehicle_edge_transmission_power[vehicle_index][edge_index] = transmission_power * edge_power
             
             edge_number = self._config.edge_number
-            task_assignment = task_assignment[: tasks_number_within_edge]
+            
+            task_assignment = np.array(actions[edge_index, int(self._config.maximum_vehicle_number_within_edges) : int(self._config.maximum_vehicle_number_within_edges * (self._config.edge_number + 1))])
                         
             for i in range(int(tasks_number_within_edge)):
-                vehicle_index = vehicle_index_within_edge[i]
-                if task_assignment[i] < 0.01:
-                    task_assignment[i] = 0.01
-                if task_assignment[i] > 0.99:
-                    task_assignment[i] = 0.99
+                new_task_assignment = task_assignment[i * edge_number : (i + 1) * edge_number]
                 
-                processing_edge_index = int(np.floor(task_assignment[i] / (1 / edge_number)))
+                vehicle_index = vehicle_index_within_edge[i]
+                
+                processing_edge_index = int(np.argmax(new_task_assignment))
                 
                 vehicle_edge_task_assignment[vehicle_index][processing_edge_index] = 1
             
@@ -224,7 +222,7 @@ class vehicularNetworkEnv(dm_env.Environment):
 
             edge_computing_speed = self._edge_list.get_edge_by_index(edge_index).get_computing_speed()
             edge_occupied_computing_speed = self._occupied_computing_resources[edge_index][self._time_slots.now()]
-            computation_resource_allocation = np.array(actions[edge_index, int(self._config.maximum_vehicle_number_within_edges) * 2: ] )
+            computation_resource_allocation = np.array(actions[edge_index, int(self._config.maximum_vehicle_number_within_edges * (self._config.edge_number + 1)): ] )
             
             task_assignment_number = vehicle_edge_task_assignment[:, edge_index].sum()
             input_array = computation_resource_allocation[: int(task_assignment_number)]
@@ -550,7 +548,7 @@ def define_size_of_spaces(
     edge_number: int,
 ) -> Tuple[int, int, int, int]:
     """The action space is transmison power, task assignment, and computing resources allocation"""
-    action_size = maximum_vehicle_number_within_edges * 3
+    action_size = maximum_vehicle_number_within_edges * (2 + edge_number)
     
     """The observation space is the location, task size, computing cycles of each vehicle, then the aviliable transmission power, and computation resoucers"""
     observation_size = maximum_vehicle_number_within_edges * 3 + 2
