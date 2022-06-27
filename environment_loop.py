@@ -16,6 +16,7 @@
 """A simple agent-environment training loop."""
 
 import operator
+from re import M
 import time
 from typing import Optional, Sequence
 
@@ -29,6 +30,7 @@ import dm_env
 from dm_env import specs
 import numpy as np
 import tree
+from Log.logger import myapp
 
 
 class EnvironmentLoop(core.Worker):
@@ -106,19 +108,40 @@ class EnvironmentLoop(core.Worker):
             observer.observe_first(self._environment, timestep)
         
         # Run an episode.
-        
+        e_time_start = time.time()
+        select_action_time = 0
+        environment_step_time = 0
+        observer_and_update_time = 0
+        reward_1 = 0
+        vehicle_transmission_times = []
+        vehicle_wired_transmission_times = []
+        vehicle_execution_times = [] 
+        rewards_1s = []
         while not timestep.last():
         # Generate an action from the agent's policy and step the environment.
             # print("timestep.observation: ", timestep.observation[:, -2:])
+            select_action_time_start = time.time()
             action = self._actor.select_action(timestep.observation)
-            timestep, cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number = self._environment.step(action)
+            select_action_time += time.time() - select_action_time_start
             
+            environment_step_time_start = time.time()
+            timestep, cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number, vehicle_transmission_time, vehicle_wired_transmission_time, vehicle_execution_time, rewards_1 = self._environment.step(action)
+            environment_step_time += time.time() - environment_step_time_start
+            
+            vehicle_transmission_times.append(vehicle_transmission_time)
+            vehicle_wired_transmission_times.append(vehicle_wired_transmission_times)
+            vehicle_execution_times.append(vehicle_execution_time)
+            rewards_1s.append(rewards_1)
+            # myapp.debug(f"episode_steps: {episode_steps}")
+            # myapp.debug(f"timestep.reward: {timestep.reward}")
+            
+            observer_and_update_time_start = time.time()
             cumulative_rewards += cumulative_reward
             average_vehicle_interferences += average_vehicle_interference
             average_service_times += average_service_time
             successful_serviceds += successful_serviced
             task_required_numbers += task_required_number
-            
+            reward_1 += timestep.reward[-1]
             # Have the agent observe the timestep and let the actor update itself.
             self._actor.observe(action, next_timestep=timestep)
             for observer in self._observers:
@@ -139,9 +162,24 @@ class EnvironmentLoop(core.Worker):
             episode_return = tree.map_structure(operator.iadd,
                                                 episode_return,
                                                 timestep.reward)
+            observer_and_update_time += time.time() - observer_and_update_time_start
+        
+        e_time_end = time.time()
+        # print("episodes time taken: ", e_time_end - e_time_start)
+        # print("select_action_time taken: ", select_action_time)
+        # print("environment_step_time: ", environment_step_time)
+        # print("observer_and_update_time: ", observer_and_update_time)
         # Record counts.
         counts = self._counter.increment(episodes=1, steps=episode_steps)
 
+        # if reward_1 > -5e4:
+        #     for i in range(len(vehicle_transmission_times)):
+        #         myapp.debug(f"i: {i}")
+        #         myapp.debug(f"vehicle_transmission_times {i}: {vehicle_transmission_times[i]}")
+        #         myapp.debug(f"vehicle_wired_transmission_times {i}: {vehicle_wired_transmission_times[i]}")
+        #         myapp.debug(f"vehicle_execution_times {i}: {vehicle_execution_times[i]}")
+        #         myapp.debug(f"rewards_1s {i}: {rewards_1s[i]}")
+            # myapp.debug(f"timestep.reward: {timestep.reward}")
         # Collect the results and combine with counts.
         steps_per_second = episode_steps / (time.time() - start_time)
         result = {

@@ -1,15 +1,13 @@
 from typing import Optional, List, Tuple
 import numpy as np
-from Environment.dataStruct import get_vehicle_number
-from Environment.environment import vehicularNetworkEnv, init_distance_matrix_and_radio_coverage_matrix, define_size_of_spaces, get_maximum_vehicle_number
+from Environment.environment import vehicularNetworkEnv, init_distance_matrix_and_radio_coverage_matrix, define_size_of_spaces
 from Environment.environmentConfig import vehicularNetworkEnvConfig
-from Environment.dataStruct import get_vehicle_number, vehicleList, timeSlots, taskList, edgeList
+from Environment.dataStruct import vehicleList, timeSlots, taskList, edgeList
 
 def get_default_environment(
         flatten_space: Optional[bool] = False,
     ) -> Tuple[timeSlots, taskList, vehicleList, edgeList, np.ndarray, np.ndarray, List[List[List[int]]], vehicularNetworkEnvConfig, vehicularNetworkEnv]:
     environment_config = vehicularNetworkEnvConfig()
-    environment_config.vehicle_number = int(get_vehicle_number(environment_config.trajectories_file_name) * environment_config.vehicle_number_rate) 
     environment_config.vehicle_seeds += [i for i in range(environment_config.vehicle_number)]
     
     time_slots= timeSlots(
@@ -30,6 +28,8 @@ def get_default_environment(
     )
     
     vehicle_list = vehicleList(
+        edge_number=environment_config.edge_number,
+        communication_range=environment_config.communication_range,
         vehicle_number=environment_config.vehicle_number,
         time_slots=time_slots,
         trajectories_file_name=environment_config.trajectories_file_name,
@@ -38,6 +38,9 @@ def get_default_environment(
         task_request_rate=environment_config.task_request_rate,
         seeds=environment_config.vehicle_seeds,
     )
+    
+    # print("len(vehicle_list): ", len(vehicle_list.get_vehicle_list()))
+    # print("vehicle_number: ", environment_config.vehicle_number)
     
     edge_list = edgeList(
         edge_number=environment_config.edge_number,
@@ -53,9 +56,14 @@ def get_default_environment(
     
     distance_matrix, channel_condition_matrix, vehicle_index_within_edges = init_distance_matrix_and_radio_coverage_matrix(env_config=environment_config, vehicle_list=vehicle_list, edge_list=edge_list)
     
-    environment_config.maximum_vehicle_number_within_edges = int(get_maximum_vehicle_number(env_config=environment_config, vehicle_list=vehicle_list, edge_list=edge_list))
+    environment_config.vehicle_number_within_edges = int(environment_config.vehicle_number / environment_config.edge_number)
     environment_config.action_size, environment_config.observation_size, environment_config.reward_size, \
-            environment_config.critic_network_action_size = define_size_of_spaces(maximum_vehicle_number_within_edges=environment_config.maximum_vehicle_number_within_edges, edge_number=environment_config.edge_number)
+            environment_config.critic_network_action_size = define_size_of_spaces(vehicle_number_within_edges=environment_config.vehicle_number_within_edges, edge_number=environment_config.edge_number, task_assigned_number=environment_config.task_assigned_number)
+    
+    print("environment_config.action_size: ", environment_config.action_size)
+    print("environment_config.observation_size: ", environment_config.observation_size)
+    print("environment_config.reward_size: ", environment_config.reward_size)
+    print("environment_config.critic_network_action_size: ", environment_config.critic_network_action_size)
     
     environment = vehicularNetworkEnv(
         envConfig = environment_config,

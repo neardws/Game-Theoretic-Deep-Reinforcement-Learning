@@ -9,13 +9,10 @@ import acme
 from acme import adders
 from acme import core
 from acme import datasets
-from acme import types
 from acme.adders import reverb as reverb_adders
 from Agents.MAD4PG import actors
 from Agents.MAD4PG import learning
 from acme.agents import agent
-from acme.tf import networks as network_utils
-from acme.tf import utils
 from acme.tf import variable_utils
 from acme.tf import savers as tf2_savers
 from acme.utils import counting
@@ -27,7 +24,7 @@ import sonnet as snt
 import launchpad as lp
 import functools
 import dm_env
-from Agents.MAD4PG.networks import make_default_MAD3PGNetworks
+from Agents.MAD4PG.networks import make_default_MAD3PGNetworks, MAD3PGNetwork
 from environment_loop import EnvironmentLoop
 
 Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
@@ -60,16 +57,16 @@ class MAD3PGConfig:
         accelerator: 'TPU', 'GPU', or 'CPU'. If omitted, the first available accelerator type from ['TPU', 'GPU', 'CPU'] will be selected.
     """
     discount: float = 0.99
-    batch_size: int = 512
+    batch_size: int = 256
     prefetch_size: int = 4
-    target_update_period: int = 1600
-    variable_update_period: int = 2000
+    target_update_period: int = 100
+    variable_update_period: int = 1000
     policy_optimizers: Optional[List[snt.Optimizer]] = None
     critic_optimizers: Optional[List[snt.Optimizer]] = None
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
-    samples_per_insert: Optional[float] = 1.0
-    n_step: int = 5
+    samples_per_insert: Optional[float] = 32.0
+    n_step: int = 1
     sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE
@@ -77,68 +74,6 @@ class MAD3PGConfig:
     logger: Optional[loggers.Logger] = None
     checkpoint: bool = True
     accelerator: Optional[str] = 'GPU'
-
-
-@dataclasses.dataclass
-class MAD3PGNetwork:
-    """Structure containing the networks for MAD3PG."""
-    
-    policy_network: types.TensorTransformation
-    critic_network: types.TensorTransformation
-    observation_network: types.TensorTransformation
-
-    def __init__(
-        self,
-        policy_network: types.TensorTransformation,
-        critic_network: types.TensorTransformation,
-        observation_network: types.TensorTransformation,
-    ):
-        # This method is implemented (rather than added by the dataclass decorator)
-        # in order to allow observation network to be passed as an arbitrary tensor
-        # transformation rather than as a snt Module.
-        self.policy_network = policy_network
-        self.critic_network = critic_network
-        self.observation_network = utils.to_sonnet_module(observation_network)
-
-    def init(
-        self, 
-        environment_spec,
-    ):
-        """Initialize the networks given an environment spec."""
-        # Get observation and action specs.
-        observation_spec = environment_spec.edge_observations
-        critic_action_spec = environment_spec.critic_actions
-
-        # Create variables for the observation net and, as a side-effect, get a
-        # spec describing the embedding space.
-        emb_spec = utils.create_variables(self.observation_network, [observation_spec])
-        
-        # Create variables for the policy and critic nets.
-        _ = utils.create_variables(self.policy_network, [emb_spec])
-        _ = utils.create_variables(self.critic_network, [emb_spec, critic_action_spec])
-        
-
-    def make_policy(
-        self,
-        environment_spec,
-        sigma: float = 0.0,
-    ) -> snt.Module:
-        """Create a single network which evaluates the policy."""
-        # Stack the observation and policy networks.
-
-        stacks = [self.observation_network, self.policy_network]
-
-        # If a stochastic/non-greedy policy is requested, add Gaussian noise on
-        # top to enable a simple form of exploration.
-        # TODO: Refactor this to remove it from the class.
-        if sigma > 0.0:
-            stacks += [
-                network_utils.ClippedGaussian(sigma),
-                network_utils.ClipToSpec(environment_spec.edge_actions),   # Clip to action spec.
-            ]
-                
-        # Return a network which sequentially evaluates everything in the stack.
-        return snt.Sequential(stacks)
 
 
 class MAD3PGAgent(agent.Agent):

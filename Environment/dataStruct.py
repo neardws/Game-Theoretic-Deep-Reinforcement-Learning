@@ -1,4 +1,5 @@
 
+import re
 import numpy as np
 import pandas as pd
 from typing import List
@@ -286,8 +287,11 @@ class vehicle(object):
         requested_tasks = np.zeros(self._slot_number)
         for index in range(self._slot_number):
             requested_tasks[index] = -1
-        np.random.seed(self._seed)
-        task_requested_time_slot_index = list(np.random.choice(self._slot_number, requested_task_number, replace=False))
+        if requested_task_number == self._slot_number:
+            task_requested_time_slot_index = list(range(self._slot_number))
+        else:
+            np.random.seed(self._seed)
+            task_requested_time_slot_index = list(np.random.choice(self._slot_number, requested_task_number, replace=False))
         np.random.seed(self._seed)
         task_requested_task_index = list(np.random.choice(self._task_number, requested_task_number, replace=True))
         for i in range(len(task_requested_time_slot_index)):
@@ -297,6 +301,8 @@ class vehicle(object):
 class vehicleList(object):
     def __init__(
         self,
+        edge_number: int,
+        communication_range: float,
         vehicle_number: int,
         time_slots: timeSlots,
         trajectories_file_name: str,        
@@ -305,7 +311,10 @@ class vehicleList(object):
         task_request_rate: float,
         seeds: List[int]
     ) -> None:
+        self._edge_number = edge_number
+        self._communication_range = communication_range
         self._vehicle_number = vehicle_number
+        self._vehicle_number_in_edge = int(self._vehicle_number / self._edge_number)
         self._trajectories_file_name = trajectories_file_name
         self._slot_number = slot_number
         self._task_number = task_number
@@ -340,52 +349,47 @@ class vehicleList(object):
         return self._vehicle_list[int(vehicle_index)]
     
     def read_vehicle_trajectories(self, timeSlots: timeSlots) -> List[trajectory]:
-
-        df = pd.read_csv(
-            self._trajectories_file_name, 
-            names=['vehicle_id', 'time', 'longitude', 'latitude'], header=0)
-
-        max_vehicle_id = df['vehicle_id'].max()
         
-        selected_vehicle_id = []
-        for vehicle_id in range(int(max_vehicle_id)):
-            new_df = df[df['vehicle_id'] == vehicle_id]
-            max_x = new_df['longitude'].max()
-            max_y = new_df['latitude'].max()
-            min_x = new_df['longitude'].min()
-            min_y = new_df['latitude'].min()
-            distance = np.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
-            selected_vehicle_id.append(
-                {
-                    "vehicle_id": vehicle_id,
-                    "distance": distance
-                })
-
-        selected_vehicle_id.sort(key=lambda x : x["distance"], reverse=True)
-        new_vehicle_id = 0
+        edge_number_in_width = int(np.sqrt(self._edge_number))
         vehicle_trajectories: List[trajectory] = []
-        for vehicle_id in selected_vehicle_id[ : self._vehicle_number]:
-            new_df = df[df['vehicle_id'] == vehicle_id["vehicle_id"]]
-            loc_list: List[location] = []
-            for row in new_df.itertuples():
-                # time = getattr(row, 'time')
-                x = getattr(row, 'longitude')
-                y = getattr(row, 'latitude')
-                loc = location(x, y)
-                loc_list.append(loc)
-            new_vehicle_trajectory: trajectory = trajectory(
-                timeSlots=timeSlots,
-                locations=loc_list
-            )
-            new_vehicle_id += 1
-            vehicle_trajectories.append(new_vehicle_trajectory)
+        for i in range(edge_number_in_width):
+            for j in range(edge_number_in_width):
+                trajectories_file_name = self._trajectories_file_name + '_' + str(i) + '_' + str(j) + '.csv'
+                df = pd.read_csv(
+                    trajectories_file_name, 
+                    names=['vehicle_id', 'time', 'longitude', 'latitude'], header=0)
+
+                max_vehicle_id = df['vehicle_id'].max()
+                
+                selected_vehicle_id = []
+                for vehicle_id in range(int(max_vehicle_id)):
+                    new_df = df[df['vehicle_id'] == vehicle_id]
+                    max_x = new_df['longitude'].max()
+                    max_y = new_df['latitude'].max()
+                    min_x = new_df['longitude'].min()
+                    min_y = new_df['latitude'].min()
+                    max_distance = np.sqrt((max_x - self._communication_range) ** 2 + (max_y - self._communication_range) ** 2)
+                    min_distance = np.sqrt((min_x - self._communication_range) ** 2 + (min_y - self._communication_range) ** 2)
+                    if max_distance < self._communication_range and min_distance < self._communication_range:
+                        selected_vehicle_id.append(vehicle_id)
+                
+                if len(selected_vehicle_id) < self._vehicle_number_in_edge:
+                    raise ValueError(f'i: {i}, j: {j}, len(selected_vehicle_id): {len(selected_vehicle_id)} Error: vehicle number in edge is less than expected')
+                    
+                for vehicle_id in selected_vehicle_id[ : self._vehicle_number_in_edge]:
+                    new_df = df[df['vehicle_id'] == vehicle_id]
+                    loc_list: List[location] = []
+                    for row in new_df.itertuples():
+                        # time = getattr(row, 'time')
+                        x = getattr(row, 'longitude') + i * self._communication_range * 2
+                        y = getattr(row, 'latitude') + j * self._communication_range * 2
+                        loc = location(x, y)
+                        loc_list.append(loc)
+                    new_vehicle_trajectory: trajectory = trajectory(
+                        timeSlots=timeSlots,
+                        locations=loc_list
+                    )
+                    vehicle_trajectories.append(new_vehicle_trajectory)
 
         return vehicle_trajectories
 
-
-def get_vehicle_number(trajectories_file_name) -> int:
-    df = pd.read_csv(
-        trajectories_file_name, 
-        names=['vehicle_id', 'time', 'longitude', 'latitude'], header=0)
-
-    return df['vehicle_id'].max()

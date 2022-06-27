@@ -7,8 +7,10 @@ class vehicleTrajectoriesProcessor(object):
         self, 
         file_name: str, 
         longitude_min: float, 
-        latitude_min: float, 
+        latitude_min: float,
+        edge_number: int,
         map_width: float,
+        communication_range: float,
         time_start: str, 
         time_end: str, 
         out_file: str) -> None:
@@ -26,18 +28,35 @@ class vehicleTrajectoriesProcessor(object):
         """
         self._file_name = file_name
         self._longitude_min, self._latitude_min = self.gcj02_to_wgs84(longitude_min, latitude_min)
-        self.map_width = map_width
+        self._map_width = map_width
+        self._communication_range = communication_range
         self._time_start = time_start
         self._time_end = time_end
         self._out_file = out_file
+        
+        self._edge_number = edge_number
+        
+        self._edge_number_in_width = int(np.sqrt(self._edge_number))
+        
+        longitudes = np.zeros(self._edge_number_in_width)
+        latitudes = np.zeros(self._edge_number_in_width)
+        longitudes[0] = self._longitude_min
+        latitudes[0] = self._latitude_min
+        for i in range(1, self._edge_number_in_width):
+            longitudes[i], latitudes[i] = self.get_longitude_and_latitude_max(longitudes[i-1], latitudes[i-1], communication_range * 2)
+        
+        for i in range(self._edge_number_in_width):
+            for j in range(self._edge_number_in_width):
+                self.process(
+                    communication_range=self._communication_range, 
+                    longitude_min=longitudes[i], 
+                    latitude_min=latitudes[j], 
+                    out_file=self._out_file + '_' + str(i) + '_' + str(j) + '.csv'
+                )
 
-        self._longitude_max, self._latitude_max = self.get_longitude_and_latitude_max()
-
-        self.process()
-
-    def get_longitude_and_latitude_max(self) -> tuple:
-        longitude_max = self._longitude_min
-        latitude_max = self._latitude_min
+    def get_longitude_and_latitude_max(self, longitude_min, latitude_min, map_width) -> tuple:
+        longitude_max = longitude_min
+        latitude_max = latitude_min
         precision = 5 * 1e-1   
         """
         += 1e-2 add 1467 meters
@@ -46,9 +65,9 @@ class vehicleTrajectoriesProcessor(object):
         += 1e-5 add 1 meter
         += 1e-6 add 0.25 meters
         """
-        length = np.sqrt(2) * self.map_width
+        length = np.sqrt(2) * map_width
         while(True):
-            distance = self.get_distance(self._longitude_min, self._latitude_min, longitude_max, latitude_max)
+            distance = self.get_distance(longitude_min, latitude_min, longitude_max, latitude_max)
             if np.fabs(distance - length) < precision:
                 break
             if np.fabs(distance - length) > 2000.0:
@@ -68,7 +87,7 @@ class vehicleTrajectoriesProcessor(object):
                 latitude_max += 1e-6
         return longitude_max, latitude_max
 
-    def process(self) -> None:
+    def process(self, communication_range, longitude_min, latitude_min, out_file) -> None:
 
         time_style = "%Y-%m-%d %H:%M:%S"
         time_start_array = time.strptime(self._time_start, time_style)
@@ -85,11 +104,13 @@ class vehicleTrajectoriesProcessor(object):
         df.drop(df.columns[[1]], axis=1, inplace=True)
         df.dropna(axis=0)
 
+        longitude_max, latitude_max = self.get_longitude_and_latitude_max(longitude_min, latitude_min, communication_range * 2)
+        
         df = df[
-            (df['longitude'] > self._longitude_min) & 
-            (df['longitude'] < self._longitude_max) & 
-            (df['latitude'] > self._latitude_min) & 
-            (df['latitude'] < self._latitude_max) & 
+            (df['longitude'] > longitude_min) & 
+            (df['longitude'] < longitude_max) & 
+            (df['latitude'] > latitude_min) & 
+            (df['latitude'] < latitude_max) & 
             (df['time'] > time_start) & 
             (df['time'] < time_end)]  # location
         
@@ -108,8 +129,8 @@ class vehicleTrajectoriesProcessor(object):
                     row['vehicle_id'] = vehicle_number
                     longitude, latitude = self.gcj02_to_wgs84(float(row['longitude']), float(row['latitude']))
                     row['time'] = row['time'] - time_start
-                    x = self.get_distance(self._longitude_min, self._latitude_min, longitude, self._latitude_min)
-                    y = self.get_distance(self._longitude_min, self._latitude_min, self._longitude_min, latitude)
+                    x = self.get_distance(longitude_min, latitude_min, longitude, latitude_min)
+                    y = self.get_distance(longitude_min, latitude_min, longitude_min, latitude)
                     row['longitude'] = x
                     row['latitude'] = y
                     df.iloc[index] = pd.Series(row)
@@ -118,8 +139,8 @@ class vehicleTrajectoriesProcessor(object):
                     row['vehicle_id'] = vehicle_number
                     longitude, latitude = self.gcj02_to_wgs84(float(row['longitude']), float(row['latitude']))
                     row['time'] = row['time'] - time_start
-                    x = self.get_distance(self._longitude_min, self._latitude_min, longitude, self._latitude_min)
-                    y = self.get_distance(self._longitude_min, self._latitude_min, self._longitude_min, latitude)
+                    x = self.get_distance(longitude_min, latitude_min, longitude, latitude_min)
+                    y = self.get_distance(longitude_min, latitude_min, longitude_min, latitude)
                     row['longitude'] = x
                     row['latitude'] = y
                     df.iloc[index] = pd.Series(row)
@@ -127,8 +148,8 @@ class vehicleTrajectoriesProcessor(object):
                 row['vehicle_id'] = vehicle_number
                 longitude, latitude = self.gcj02_to_wgs84(float(row['longitude']), float(row['latitude']))
                 row['time'] = row['time'] - time_start
-                x = self.get_distance(self._longitude_min, self._latitude_min, longitude, self._latitude_min)
-                y = self.get_distance(self._longitude_min, self._latitude_min, self._longitude_min, latitude)
+                x = self.get_distance(longitude_min, latitude_min, longitude, latitude_min)
+                y = self.get_distance(longitude_min, latitude_min, longitude_min, latitude)
                 row['longitude'] = x
                 row['latitude'] = y
                 df.iloc[index] = pd.Series(row)
@@ -184,7 +205,7 @@ class vehicleTrajectoriesProcessor(object):
                             ignore_index=True)
                 old_row = new_row
         df.sort_values(by=['vehicle_id', 'time'], inplace=True, ignore_index=True)
-        df.to_csv(self._out_file)
+        df.to_csv(out_file)
 
     def get_out_file(self):
         return self._out_file

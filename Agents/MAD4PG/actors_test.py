@@ -3,33 +3,29 @@ sys.path.append(r"/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Lear
 from environment_loop import EnvironmentLoop
 from absl.testing import absltest
 from Agents.MAD4PG import actors
-from Environment.environment import vehicularNetworkEnv, make_environment_spec
-from Environment.environmentConfig import vehicularNetworkEnvConfig
+from Environment.environment import make_environment_spec
 from Agents.MAD4PG.networks import make_policy_network
-from Environment.dataStruct import get_vehicle_number
+from Experiment.make_environment import get_default_environment
 
 class ActorTest(absltest.TestCase):
 
 
     def test_feedforward(self):
 
-        config = vehicularNetworkEnvConfig()
-        config.vehicle_number = int(get_vehicle_number(config.trajectories_file_name))
-        config.vehicle_seeds += [i for i in range(config.vehicle_number)]
+        time_slots, task_list, vehicle_list, edge_list, distance_matrix, channel_condition_matrix, \
+        vehicle_index_within_edges, environment_config, environment = get_default_environment()
 
-        env = vehicularNetworkEnv(config)
+        env_spec = make_environment_spec(environment)
 
-        env_spec = make_environment_spec(env)
-
-        policy_networks = [make_policy_network(env_spec.edge_actions) for _ in range(config.edge_number)]
+        policy_networks = [make_policy_network(env_spec.edge_actions) for _ in range(environment_config.edge_number)]
 
         actor = actors.FeedForwardActor(
             policy_networks=policy_networks,
             
-            edge_number=config.edge_number,
-            edge_action_size=env._action_size,
+            edge_number=environment_config.edge_number,
+            edge_action_size=environment_config.action_size,
         )
-        loop = EnvironmentLoop(env, actor)
+        loop = EnvironmentLoop(environment, actor)
         loop.run(20)
 
 

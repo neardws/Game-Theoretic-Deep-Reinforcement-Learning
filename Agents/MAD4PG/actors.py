@@ -10,7 +10,8 @@ import dm_env
 import sonnet as snt
 import tensorflow as tf
 import tensorflow_probability as tfp
-
+import numpy as np
+from Log.logger import myapp
 tfd = tfp.distributions
 
 
@@ -58,17 +59,23 @@ class FeedForwardActor(core.Actor):
     ) -> types.NestedTensor:
         # # Add a dummy batch dimension and as a side effect convert numpy to TF.
         # Compute the policy, conditioned on the observation.
-        
+        # myapp.debug(f"observations: {np.array(observations)}")
         edge_actions = []
         for i in range(self._edge_number):
+            # myapp.debug(f"i: {i}")
             edge_observation = observations[i, :]
+            # myapp.debug(f"edge_observation: {np.array(edge_observation)}")
             edge_batched_observation = tf2_utils.add_batch_dim(edge_observation)
+            # myapp.debug(f"edge_batched_observation: {edge_batched_observation}")
             edge_policy = self._policy_networks[i](edge_batched_observation)
             edge_action = edge_policy.sample() if isinstance(edge_policy, tfd.Distribution) else edge_policy
+            # myapp.debug(f"edge_action: {edge_action}")
             edge_actions.append(edge_action)
             
         edge_actions = tf.convert_to_tensor(edge_actions, dtype=tf.float64)
+        # myapp.debug(f"edge_actions: {edge_actions}")
         action = tf.reshape(edge_actions, [self._edge_number, self._edge_action_size])
+        # myapp.debug(f"action: {action}")
         return action
 
     def select_action(self, observation: types.NestedArray) -> types.NestedArray:

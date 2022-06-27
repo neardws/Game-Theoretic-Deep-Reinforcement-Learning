@@ -17,6 +17,8 @@ import tree
 import tensorflow as tf
 from acme import types
 from Agents.MAD4PG.gradient import GradientTape
+from Environment.dataStruct import edge
+from Log.logger import myapp
 
 Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
 
@@ -118,8 +120,8 @@ class MAD3PGLearner(acme.Learner):
             self._target_update_period = target_update_period
 
             # Create optimizers if they aren't given.
-            self._policy_optimizers = policy_optimizers or [snt.optimizers.Adam(learning_rate=1e-5) for _ in range(edge_number)]
-            self._critic_optimizers = critic_optimizers or [snt.optimizers.Adam(learning_rate=1e-3) for _ in range(edge_number)]
+            self._policy_optimizers = policy_optimizers or [snt.optimizers.Adam(learning_rate=1e-4) for _ in range(edge_number)]
+            self._critic_optimizers = critic_optimizers or [snt.optimizers.Adam(learning_rate=1e-4) for _ in range(edge_number)]
 
         # Batch dataset and create iterator.
         self._iterator = dataset_iterator
@@ -181,17 +183,30 @@ class MAD3PGLearner(acme.Learner):
             # the shpae of the transitions.observation is [batch_size, edge_number, edge_observation_size]
             batch_size = transitions.observation.shape[0]
             
+            # myapp.debug(f"observation: {np.array(transitions.observation)}")
+            
             # NOTE: the input of the edge_observation_network is 
             # [batch_size, edge_observation_size]
+            # a_t_list = []
+            # for i in range(len(self._target_observation_networks)):
+            #     observation = transitions.observation[:, i, :]
+            #     o_t = self._target_observation_networks[i](observation)
+            #     o_t = tree.map_structure(tf.stop_gradient, o_t)
+            #     a_t = self._target_policy_networks[i](o_t)
+            #     a_t_list.append(a_t)
+            
+            # edge_a_t = tf.concat([a_t_list[i] for i in range(len(self._target_observation_networks))], axis=1)
+            
             a_t_list = []
             for i in range(len(self._target_observation_networks)):
-                observation = transitions.observation[:, i, :]
+                observation = transitions.next_observation[:, i, :]
                 o_t = self._target_observation_networks[i](observation)
                 o_t = tree.map_structure(tf.stop_gradient, o_t)
                 a_t = self._target_policy_networks[i](o_t)
                 a_t_list.append(a_t)
             
-            edge_a_t = tf.concat([a_t_list[i] for i in range(len(self._target_observation_networks))], axis=1)
+            edge_next_a_t = tf.concat([a_t_list[i] for i in range(len(self._target_observation_networks))], axis=1)
+            
             
             for edge_index in range(self._edge_number):
 
@@ -205,21 +220,25 @@ class MAD3PGLearner(acme.Learner):
 
                 # Critic learning.
                 q_tm1 = self._critic_networks[edge_index](o_tm1, tf.reshape(transitions.action, shape=[batch_size, -1]))
-                q_t = self._target_critic_networks[edge_index](o_t, tf.reshape(edge_a_t, shape=[batch_size, -1]))
+                q_t = self._target_critic_networks[edge_index](o_t, tf.reshape(edge_next_a_t, shape=[batch_size, -1]))
 
                 # Critic loss.
                 critic_loss = losses.categorical(q_tm1, transitions.reward[:, edge_index],
                                                 discount * transitions.discount, q_t)
+                
+                # myapp.debug(f"edge_index: {edge_index}")
+                # myapp.debug(f"critic_loss: {np.array(critic_loss)}")
+                
                 critic_losses[edge_index].append(critic_loss)
 
                 # Actor learning
                 if edge_index == 0:
                     dpg_a_t = self._policy_networks[edge_index](o_t)
                 else:
-                    dpg_a_t = tf.reshape(edge_a_t, shape=[batch_size, self._edge_number, self._edge_action_size])[:, 0, :]
+                    dpg_a_t = tf.reshape(edge_next_a_t, shape=[batch_size, self._edge_number, self._edge_action_size])[:, 0, :]
                 for i in range(self._edge_number):
                     if i != 0 and i != edge_index:
-                        dpg_a_t = tf.concat([dpg_a_t, tf.reshape(edge_a_t, shape=[batch_size, self._edge_number, self._edge_action_size])[:, i, :]], axis=1)
+                        dpg_a_t = tf.concat([dpg_a_t, tf.reshape(edge_next_a_t, shape=[batch_size, self._edge_number, self._edge_action_size])[:, i, :]], axis=1)
                     elif i != 0 and i == edge_index:
                         dpg_a_t = tf.concat([dpg_a_t, self._policy_networks[edge_index](o_t)], axis=1)
                 
@@ -228,20 +247,30 @@ class MAD3PGLearner(acme.Learner):
 
                 # Actor loss. If clipping is true use dqda clipping and clip the norm.
                 dqda_clipping = 1.0 if self._clipping else None
+                # myapp.debug(f"dpg_q_t: {np.array(dpg_q_t)}")
+                # myapp.debug(f"dpg_a_t: {np.array(dpg_a_t)}")
                 policy_loss = losses.dpg(
                     dpg_q_t,
-                    edge_a_t,
+                    dpg_a_t,
                     tape=tape,
                     dqda_clipping=dqda_clipping,
                     clip_norm=self._clipping)
                 policy_losses[edge_index].append(policy_loss)
-        
+                
+                # myapp.debug(f"policy_loss: {np.array(policy_loss)}")
+
+            
+            
             new_critic_losses = []
             new_policy_losses = []
             
             for i in range(self._edge_number):
                 new_critic_losses.append(tf.reduce_mean(tf.stack(critic_losses[i], axis=0)))
                 new_policy_losses.append(tf.reduce_mean(tf.stack(policy_losses[i], axis=0)))
+            
+            # for i in range(self._edge_number):
+            #     myapp.debug(f"new_critic_losses {i}: {np.array(new_critic_losses[i])}")
+            #     myapp.debug(f"new_policy_losses {i}: {np.array(new_policy_losses[i])}")
         
         # Get trainable variables.
         policy_variables = [self._policy_networks[i].trainable_variables for i in range(self._edge_number)]
@@ -254,10 +283,16 @@ class MAD3PGLearner(acme.Learner):
         
         policy_gradients =  [average_gradients_across_replicas(
             replica_context,
-            tape.gradient(new_critic_losses[edge_index], policy_variables[edge_index])) for edge_index in range(self._edge_number)]
+            tape.gradient(new_policy_losses[edge_index], policy_variables[edge_index])) for edge_index in range(self._edge_number)]
         critic_gradients =  [average_gradients_across_replicas(
             replica_context,
             tape.gradient(new_critic_losses[edge_index], critic_variables[edge_index])) for edge_index in range(self._edge_number)]
+        
+        # for edge_index in range(self._edge_number):
+        
+        #     myapp.debug(f"policy_gradients {edge_index}: {np.array(policy_gradients[edge_index])}")
+        #     myapp.debug(f"critic_gradients {edge_index}: {np.array(critic_gradients[edge_index])}")
+        
         # Delete the tape manually because of the persistent=True flag.
         del tape
 
@@ -265,6 +300,10 @@ class MAD3PGLearner(acme.Learner):
         if self._clipping:
             policy_gradients = [tf.clip_by_global_norm(policy_gradient, 40.)[0] for policy_gradient in policy_gradients]
             critic_gradients = [tf.clip_by_global_norm(critic_gradient, 40.)[0] for critic_gradient in critic_gradients]
+            
+        # for edge_index in range(self._edge_number):
+        #     myapp.debug(f"policy_gradients {edge_index}: {np.array(policy_gradients[edge_index])}")
+        #     myapp.debug(f"critic_gradients {edge_index}: {np.array(critic_gradients[edge_index])}")
         # Apply gradients.
         for edge_index in range(self._edge_number):
             self._policy_optimizers[edge_index].apply(

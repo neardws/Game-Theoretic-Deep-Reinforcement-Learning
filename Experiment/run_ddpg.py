@@ -14,7 +14,7 @@ from Experiment.make_environment import get_default_environment
 def make_networks(
     action_spec: types.NestedSpec,
     policy_layer_sizes: Sequence[int] = (128, 128),
-    critic_layer_sizes: Sequence[int] = (256, 256),
+    critic_layer_sizes: Sequence[int] = (256, 128),
     ) -> Dict[str, snt.Module]:
     """Creates networks used by the agent."""
 
