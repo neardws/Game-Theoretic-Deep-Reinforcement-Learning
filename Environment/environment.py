@@ -7,7 +7,7 @@ from acme.types import NestedSpec
 import numpy as np
 from typing import List, Tuple, NamedTuple, Optional
 import Environment.environmentConfig as env_config
-from Environment.dataStruct import timeSlots, taskList, edgeList, vehicle, vehicleList
+from Environment.dataStruct import task, timeSlots, taskList, edgeList, vehicle, vehicleList
 from Environment.utilities import compute_channel_gain, generate_complex_normal_distribution, generate_channel_fading_gain, compute_channel_condition, compute_transmission_rate, compute_SINR, compute_SNR, compute_edge_reward_with_SNR, cover_mW_to_W
 np.set_printoptions(threshold=np.inf)
 from Log.logger import myapp
@@ -213,27 +213,19 @@ class vehicularNetworkEnv(dm_env.Environment):
                         
             task_assignment = np.array(actions[edge_index, int(self._config.vehicle_number_within_edges) : int(self._config.vehicle_number_within_edges * 2)])
             
-            assigned_at_local = 0.8
-            small_number = 0.000000001
             for i in range(int(tasks_number_within_edge)):
-                if task_assignment[i] <= assigned_at_local:
-                    processing_edge_index = edge_index
-                else:
-                    difference = task_assignment[i] - assigned_at_local
-                    if difference < 0:
-                        difference = small_number
-                    if difference > assigned_at_local:
-                        difference = assigned_at_local - small_number
-                    processing_edge_index = int(np.floor(difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1))))
-                    # print(f"difference: {difference}, (1 / (1 - assigned_at_local)): {(1 / (1 - assigned_at_local))},  difference * (1 / (1 - assigned_at_local)): {difference * (1 / (1 - assigned_at_local))}, (1 / (self._config.edge_number - 1)): {(1 / (self._config.edge_number - 1))}, difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1)): {difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1))}, np.floor(difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1))): {np.floor(difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1)))} ")
-                    # print("processing_edge_index: ", processing_edge_index)
-                    if processing_edge_index < edge_index:
-                        processing_edge_index = processing_edge_index
-                    if processing_edge_index >= edge_index:
-                        processing_edge_index += 1
-                        if processing_edge_index == self._config.edge_number:
-                            processing_edge_index -= 1
+                task_assignment_value = task_assignment[i]
+                if task_assignment_value <= 0.01:
+                    task_assignment_value = 0.01
+                if task_assignment_value >= 0.99:
+                    task_assignment_value = 0.99
+                processing_edge_index = int(np.floor(task_assignment_value  / (1 / self._config.edge_number)))
+                
                 vehicle_index = vehicle_index_within_edge[i]
+
+                print(f"edge_index: {edge_index}, vehicle_index: {vehicle_index},  processing_edge_index: {processing_edge_index}")
+                
+                
                 vehicle_edge_task_assignment[vehicle_index][processing_edge_index] = 1
             
                 if processing_edge_index != edge_index:
@@ -243,6 +235,37 @@ class vehicularNetworkEnv(dm_env.Environment):
                             the_edge.get_edge_location().get_distance(self._edge_list.get_edge_by_index(processing_edge_index).get_edge_location())
                     for e in range(self._config.edge_number + 1):
                         vehicle_wired_transmission_time[vehicle_index, e] = wired_transmission_time
+            
+            # assigned_at_local = 0.8
+            # small_number = 0.000000001
+            # for i in range(int(tasks_number_within_edge)):
+            #     if task_assignment[i] <= assigned_at_local:
+            #         processing_edge_index = edge_index
+            #     else:
+            #         difference = task_assignment[i] - assigned_at_local
+            #         if difference < 0:
+            #             difference = small_number
+            #         if difference > assigned_at_local:
+            #             difference = assigned_at_local - small_number
+            #         processing_edge_index = int(np.floor(difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1))))
+            #         # print(f"difference: {difference}, (1 / (1 - assigned_at_local)): {(1 / (1 - assigned_at_local))},  difference * (1 / (1 - assigned_at_local)): {difference * (1 / (1 - assigned_at_local))}, (1 / (self._config.edge_number - 1)): {(1 / (self._config.edge_number - 1))}, difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1)): {difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1))}, np.floor(difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1))): {np.floor(difference * (1 / (1 - assigned_at_local))  / (1 / (self._config.edge_number - 1)))} ")
+            #         # print("processing_edge_index: ", processing_edge_index)
+            #         if processing_edge_index < edge_index:
+            #             processing_edge_index = processing_edge_index
+            #         if processing_edge_index >= edge_index:
+            #             processing_edge_index += 1
+            #             if processing_edge_index == self._config.edge_number:
+            #                 processing_edge_index -= 1
+            #     vehicle_index = vehicle_index_within_edge[i]
+            #     vehicle_edge_task_assignment[vehicle_index][processing_edge_index] = 1
+            
+            #     if processing_edge_index != edge_index:
+            #         task_index = self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(self._time_slots.now())
+            #         data_size = self._task_list.get_task_by_index(task_index).get_data_size()
+            #         wired_transmission_time = data_size / self._config.wired_transmission_rate * self._config.wired_transmission_discount * \
+            #                 the_edge.get_edge_location().get_distance(self._edge_list.get_edge_by_index(processing_edge_index).get_edge_location())
+            #         for e in range(self._config.edge_number + 1):
+            #             vehicle_wired_transmission_time[vehicle_index, e] = wired_transmission_time
         
         reward_part_2_time = time.time() - time_start
         
