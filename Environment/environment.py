@@ -7,8 +7,8 @@ from acme.types import NestedSpec
 import numpy as np
 from typing import List, Tuple, NamedTuple, Optional
 import Environment.environmentConfig as env_config
-from Environment.dataStruct import task, timeSlots, taskList, edgeList, vehicle, vehicleList
-from Environment.utilities import compute_channel_gain, generate_complex_normal_distribution, generate_channel_fading_gain, compute_channel_condition, compute_transmission_rate, compute_SINR, compute_SNR, compute_edge_reward_with_SNR, cover_mW_to_W
+from Environment.dataStruct import timeSlots, taskList, edgeList, vehicleList
+from Environment.utilities import compute_channel_gain, generate_complex_normal_distribution, compute_transmission_rate, compute_SINR, cover_mW_to_W
 np.set_printoptions(threshold=np.inf)
 from Log.logger import myapp
 
@@ -27,6 +27,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         vehicle_index_within_edges: Optional[List[List[List[int]]]] = None,
         flatten_space: Optional[bool] = False,
         occuiped: Optional[bool] = False,
+        for_mad5pg: Optional[bool] = True,
     ) -> None:
         """Initialize the environment."""
         if envConfig is None:
@@ -104,8 +105,8 @@ class vehicularNetworkEnv(dm_env.Environment):
         
         self._reset_next_step: bool = True
         self._flatten_space: bool = flatten_space
-        
         self._occuiped: bool = occuiped
+        self._for_mad5pg: bool = for_mad5pg
         
     def reset(self) -> dm_env.TimeStep:
         """Resets the state of the environment and returns an initial observation.
@@ -145,7 +146,6 @@ class vehicularNetworkEnv(dm_env.Environment):
         return dm_env.transition(observation=observation, reward=self._reward), cumulative_reward, average_vehicle_SINR, average_vehicle_intar_interference, average_vehicle_inter_interference, \
             average_vehicle_interference, average_transmision_time, average_wired_transmission_time, average_execution_time, average_service_time, successful_serviced_number, task_required_number
 
-    # TODO: add the power constraint
     def compute_reward(
         self,
         action: np.ndarray,
@@ -223,7 +223,7 @@ class vehicularNetworkEnv(dm_env.Environment):
                 
                 vehicle_index = vehicle_index_within_edge[i]
 
-                print(f"edge_index: {edge_index}, vehicle_index: {vehicle_index},  processing_edge_index: {processing_edge_index}")
+                # print(f"edge_index: {edge_index}, vehicle_index: {vehicle_index},  processing_edge_index: {processing_edge_index}")
                 
                 
                 vehicle_edge_task_assignment[vehicle_index][processing_edge_index] = 1
@@ -454,7 +454,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         
         successful_serviced = np.zeros(self._config.edge_number + 1)        
         rewards = np.zeros(self._config.edge_number + 1)
-        
+        edge_task_requested_number = np.zeros(self._config.edge_number)
         average_transmision_time = 0
         # for value in vehicle_transmission_time[:, -1]:
         #     if value != punished_time and value != 0:
@@ -481,13 +481,14 @@ class vehicularNetworkEnv(dm_env.Environment):
                     successful_serviced_number += 1                
                 for e in range(self._config.edge_number):
                     if e != edge_index:
+                        edge_task_requested_number[e] += 1
                         task_service_time = vehicle_transmission_time[vehicle_index, e] + vehicle_wired_transmission_time[vehicle_index, e] + vehicle_execution_time[vehicle_index, e]
                         if task_service_time <= self._task_list.get_task_by_index(task_index).get_delay_threshold():
                             successful_serviced[e] += 1
 
-        
-        for edge_index in range(self._config.edge_number + 1):
-            rewards[edge_index] = successful_serviced[edge_index] / task_required_number
+        rewards[-1] = successful_serviced[-1] / task_required_number
+        for edge_index in range(self._config.edge_number):
+            rewards[edge_index] = successful_serviced[edge_index] / edge_task_requested_number[edge_index]
         for edge_index in range(self._config.edge_number):
             rewards[edge_index] = rewards[-1] - rewards[edge_index]
             
@@ -504,9 +505,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         average_vehicle_intar_interference = np.sum(vehicle_intar_edge_inference[:, -1])
         average_vehicle_inter_interference = np.sum(vehicle_inter_edge_inference[:, -1])
         average_vehicle_interference = average_vehicle_intar_interference + average_vehicle_inter_interference
-        
-
-        
+                
         # average_transmision_time = np.sum(vehicle_transmission_time[:, -1])
         # average_wired_transmission_time = np.sum(vehicle_wired_transmission_time[:, -1])
         # average_execution_time = np.sum(vehicle_execution_time[:, -1])
@@ -574,13 +573,19 @@ class vehicularNetworkEnv(dm_env.Environment):
     def observation_spec(self) -> specs.BoundedArray:
         """Define and return the observation space."""
         if self._occuiped:
-            observation_shape = (self._config.edge_number, self._config.observation_size)
+            observation_size = self._config.observation_size
+            if not self._for_mad5pg:
+                observation_size -= 2
+            observation_shape = (self._config.edge_number, observation_size)
             if self._flatten_space:
-                observation_shape = (self._config.edge_number * self._config.observation_size, )
+                observation_shape = (self._config.edge_number * observation_size, ) 
         else:
-            observation_shape = (self._config.edge_number, self._config.observation_size - 2)
+            observation_size = self._config.observation_size - 2
+            if not self._for_mad5pg:
+                observation_size -= 2
+            observation_shape = (self._config.edge_number, observation_size)
             if self._flatten_space:
-                observation_shape = (self._config.edge_number * (self._config.observation_size - 2), )
+                observation_shape = (self._config.edge_number * observation_size, )
         return specs.BoundedArray(
             shape=observation_shape,
             dtype=float,
@@ -592,9 +597,14 @@ class vehicularNetworkEnv(dm_env.Environment):
     def edge_observation_spec(self) -> specs.BoundedArray:
         """Define and return the observation space."""
         if self._occuiped:
-            observation_shape = (self._config.observation_size, )
+            observation_size = self._config.observation_size
+            if not self._for_mad5pg:
+                observation_size -= 2
         else:
-            observation_shape = (self._config.observation_size - 2, )
+            observation_size = self._config.observation_size - 2
+            if not self._for_mad5pg:
+                observation_size -= 2
+        observation_shape = (observation_size, )
         return specs.BoundedArray(
             shape=observation_shape,
             dtype=float,
@@ -644,9 +654,18 @@ class vehicularNetworkEnv(dm_env.Environment):
         The observation space is the location, task size, and computation cycles of each vehicle, then the aviliable transmission power, and computation resoucers
         """
         if self._occuiped:
-            observation = np.zeros(shape=(self._config.edge_number, self._config.observation_size))
+            observation_size = self._config.observation_size
+            if not self._for_mad5pg:
+                observation_size -= 2
         else:
-            observation = np.zeros(shape=(self._config.edge_number, self._config.observation_size - 2))
+            observation_size = self._config.observation_size - 2
+            if not self._for_mad5pg:
+                observation_size -= 2
+        # print("self._config.observation_size: ", self._config.observation_size)
+        # print("self._for_mad5pg: ", self._for_mad5pg)
+        # print("observation_size: ", observation_size)
+        observation = np.zeros(shape=(self._config.edge_number, observation_size))
+        
         for j in range(self._config.edge_number):
             vehicle_index_within_edges = self._vehicle_index_within_edges[j][self._time_slots.now()]
             vehicle_number_in_edge = len(vehicle_index_within_edges)
@@ -669,11 +688,26 @@ class vehicularNetworkEnv(dm_env.Environment):
             if self._occuiped:
                 observation[j][-2] = self._occupied_power[j][self._time_slots.now()] / ( 1.01 * self._config.edge_power)
                 observation[j][-1] = self._occupied_computing_resources[j][self._time_slots.now()] / ( 1.01 * self._config.edge_maximum_computing_cycles)
+            if self._for_mad5pg:
+                observation[j][-2] = self._time_slots.now() / (self._config.time_slot_number - 1)
+                observation[j][-1] = j / (self._config.edge_number - 1)
         if self._flatten_space:
             if self._occuiped:
-                observation = np.reshape(observation, newshape=(self._config.edge_number * self._config.observation_size, ))
+                observation_size = self._config.observation_size
+                if not self._for_mad5pg:
+                    observation_size -= 2
+                    observation = np.reshape(observation, newshape=(self._config.edge_number * observation_size, ))
+                else:
+                    observation = np.reshape(observation, newshape=(self._config.edge_number * observation_size, ))
             else:
-                observation = np.reshape(observation, newshape=(self._config.edge_number * (self._config.observation_size - 2), ))
+                observation_size = self._config.observation_size - 2
+                if not self._for_mad5pg:
+                    observation_size -= 2
+                    observation = np.reshape(observation, newshape=(self._config.edge_number * observation_size, ))
+                else:
+                    observation = np.reshape(observation, newshape=(self._config.edge_number * observation_size, ))
+        
+            
         return observation
 
 
@@ -714,7 +748,7 @@ def define_size_of_spaces(
     action_size = vehicle_number_within_edges * 2 + vehicle_number_within_edges * task_assigned_number
     
     """The observation space is the location, task size, computing cycles of each vehicle, then the aviliable transmission power, and computation resoucers"""
-    observation_size = vehicle_number_within_edges * 4 + 2
+    observation_size = vehicle_number_within_edges * 4 + 2 + 2
     
     """The reward space is the reward of each edge node and the gloabl reward
     reward[-1] is the global reward.

@@ -6,6 +6,8 @@ from Environment.dataStruct import vehicleList, timeSlots, taskList, edgeList
 
 def get_default_environment(
         flatten_space: Optional[bool] = False,
+        occuiped: Optional[bool] = False,
+        for_mad5pg: Optional[bool] = False,
     ) -> Tuple[timeSlots, taskList, vehicleList, edgeList, np.ndarray, np.ndarray, List[List[List[int]]], vehicularNetworkEnvConfig, vehicularNetworkEnv]:
     environment_config = vehicularNetworkEnvConfig()
     environment_config.vehicle_seeds += [i for i in range(environment_config.vehicle_number)]
@@ -74,7 +76,9 @@ def get_default_environment(
         distance_matrix = distance_matrix, 
         channel_condition_matrix = channel_condition_matrix, 
         vehicle_index_within_edges = vehicle_index_within_edges,
-        flatten_space = flatten_space, 
+        flatten_space = flatten_space,
+        occuiped = occuiped,
+        for_mad5pg = for_mad5pg, 
     )
     
     return time_slots, task_list, vehicle_list, edge_list, distance_matrix, channel_condition_matrix, vehicle_index_within_edges, environment_config, environment

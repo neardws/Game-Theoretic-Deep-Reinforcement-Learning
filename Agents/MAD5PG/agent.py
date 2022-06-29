@@ -10,8 +10,8 @@ from acme import adders
 from acme import core
 from acme import datasets
 from acme.adders import reverb as reverb_adders
-from Agents.MAD4PG import actors
-from Agents.MAD4PG import learning
+from Agents.MAD5PG import actors
+from Agents.MAD5PG import learning
 from acme.agents import agent
 from acme.tf import variable_utils
 from acme.tf import savers as tf2_savers
@@ -24,7 +24,7 @@ import sonnet as snt
 import launchpad as lp
 import functools
 import dm_env
-from Agents.MAD4PG.networks import make_default_MAD3PGNetworks, MAD3PGNetwork
+from Agents.MAD5PG.networks import make_default_MAD3PGNetworks, MAD3PGNetwork
 from environment_loop import EnvironmentLoop
 
 Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
@@ -61,8 +61,8 @@ class MAD3PGConfig:
     prefetch_size: int = 4
     target_update_period: int = 100
     variable_update_period: int = 1000
-    policy_optimizers: Optional[List[snt.Optimizer]] = None
-    critic_optimizers: Optional[List[snt.Optimizer]] = None
+    policy_optimizers: Optional[snt.Optimizer] = None
+    critic_optimizers: Optional[snt.Optimizer] = None
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
     samples_per_insert: Optional[float] = 1.0
@@ -89,7 +89,7 @@ class MAD3PGAgent(agent.Agent):
         config: MAD3PGConfig,
         environment,
         environment_spec,
-        networks: Optional[List[MAD3PGNetwork]] = None,
+        networks: Optional[MAD3PGNetwork] = None,
     ):
         """Initialize the agent.
         Args:
@@ -111,15 +111,14 @@ class MAD3PGAgent(agent.Agent):
         self._environment = environment
         self._environment_spec = environment_spec
         # Target networks are just a copy of the online networks.
-        target_networks = [copy.deepcopy(online_networks[i]) for i in range(len(online_networks))]
+        target_networks = copy.deepcopy(online_networks)
 
         # Initialize the networks.
-        for i in range(len(online_networks)):
-            online_networks[i].init(self._environment_spec)
-            target_networks[i].init(self._environment_spec)
-
+        online_networks.init(self._environment_spec)
+        target_networks.init(self._environment_spec)
+            
         # Create the behavior policy.
-        policy_networks = [online_networks[i].make_policy(self._environment_spec, self._config.sigma) for i in range(len(online_networks))]
+        policy_networks = online_networks.make_policy(self._environment_spec, self._config.sigma)
 
         # Create the replay server and grab its address.
         replay_tables = self.make_replay_tables(self._environment_spec)
@@ -222,8 +221,7 @@ class MAD3PGAgent(agent.Agent):
         if variable_source:
             # Create the variable client responsible for keeping the actor up-to-date.
             variables = dict()
-            for i in range(len(policy_networks)):
-                variables['policy_network_' + str(i)] = policy_networks[i].variables
+            variables['policy_network'] = policy_networks.variables
             variable_client = variable_utils.VariableClient(
                 client=variable_source,
                 variables=variables,
@@ -248,8 +246,8 @@ class MAD3PGAgent(agent.Agent):
 
     def make_learner(
         self,
-        online_networks: List[MAD3PGNetwork], 
-        target_networks: List[MAD3PGNetwork],
+        online_networks: MAD3PGNetwork, 
+        target_networks: MAD3PGNetwork,
         dataset: Iterator[reverb.ReplaySample],
         counter: Optional[counting.Counter] = None,
         logger: Optional[loggers.Logger] = None,
@@ -258,18 +256,18 @@ class MAD3PGAgent(agent.Agent):
         """Creates an instance of the learner."""
         # The learner updates the parameters (and initializes them).
         return learning.MAD3PGLearner(
-            policy_networks=[online_networks[i].policy_network for i in range(len(online_networks))],
-            critic_networks=[online_networks[i].critic_network for i in range(len(online_networks))],
+            policy_networks=online_networks.policy_network,
+            critic_networks=online_networks.critic_network,
 
-            target_policy_networks=[target_networks[i].policy_network for i in range(len(target_networks))],
-            target_critic_networks=[target_networks[i].critic_network for i in range(len(target_networks))],
+            target_policy_networks=target_networks.policy_network,
+            target_critic_networks=target_networks.critic_network,
             
             discount=self._config.discount,
             target_update_period=self._config.target_update_period,
             dataset_iterator=dataset,
 
-            observation_networks=[online_networks[i].observation_network for i in range(len(online_networks))],
-            target_observation_networks=[target_networks[i].observation_network for i in range(len(target_networks))],
+            observation_networks=online_networks.observation_network,
+            target_observation_networks=target_networks.observation_network,
 
             policy_optimizers=self._config.policy_optimizers,
             critic_optimizers=self._config.critic_optimizers,
@@ -293,7 +291,7 @@ class MultiAgentDistributedDDPG:
         config: MAD3PGConfig,
         environment_factory: Callable[[bool], dm_env.Environment],
         environment_spec,
-        networks: Optional[List[MAD3PGNetwork]] = None,
+        networks: Optional[MAD3PGNetwork] = None,
         num_actors: int = 1,
         num_caches: int = 0,
         max_actor_steps: Optional[int] = None,
@@ -348,12 +346,11 @@ class MultiAgentDistributedDDPG:
         with replicator.scope():
             # Create the networks to optimize (online) and target networks.
             online_networks = self._networks
-            target_networks = [copy.deepcopy(online_networks[i]) for i in range(len(online_networks))]
+            target_networks = copy.deepcopy(online_networks)
 
             # Initialize the networks.
-            for i in range(len(online_networks)):
-                online_networks[i].init(self._environment_spec)
-                target_networks[i].init(self._environment_spec)
+            online_networks.init(self._environment_spec)
+            target_networks.init(self._environment_spec)
 
         dataset = self._agent.make_dataset_iterator(replay)
         counter = counting.Counter(counter, 'learner')
@@ -380,13 +377,9 @@ class MultiAgentDistributedDDPG:
         # Create the behavior policy.        
         networks = self._networks
         
-        for i in range(len(networks)):
-            networks[i].init(self._environment_spec)
+        networks.init(self._environment_spec)
 
-        policy_networks = [
-            networks[i].make_policy(environment_spec=self._environment_spec, sigma=self._config.sigma)
-            for i in range(len(networks))
-        ]
+        policy_networks = networks.make_policy(environment_spec=self._environment_spec, sigma=self._config.sigma)
         
         # Create the environment
         environment = self._environment_factory(False)
@@ -425,12 +418,9 @@ class MultiAgentDistributedDDPG:
 
         # Create the behavior policy.
         networks = self._networks
-        for i in range(len(networks)):
-            networks[i].init(self._environment_spec)
+        networks.init(self._environment_spec)
         
-        policy_networks = [
-            networks[i].make_policy(self._environment_spec) for i in range(len(networks))
-        ]
+        policy_networks = networks.make_policy(self._environment_spec)
         
         # Make the environment
         environment = self._environment_factory(True)

@@ -383,9 +383,46 @@ def generate_complex_normal_distribution(size: int = 1):
 #     return np.random.multivariate_normal(mean, covariance, size)
 
 if __name__ == "__main__":
-    for i in range(10):
+    for i in range(3):
         # print(generate_complex_normal_distribution())
         # print(type(generate_complex_normal_distribution()))
         
-        print(compute_channel_gain(generate_complex_normal_distribution(), 1, 3))
+        print(compute_channel_gain(generate_complex_normal_distribution(), 100, 3))
+    
+    for i in range(3):
+        # print(generate_complex_normal_distribution())
+        # print(type(generate_complex_normal_distribution()))
+        
+        print(compute_channel_gain(generate_complex_normal_distribution(), 200, 3))
+    
+    for i in range(3):
+        # print(generate_complex_normal_distribution())
+        # print(type(generate_complex_normal_distribution()))
+        
+        print(compute_channel_gain(generate_complex_normal_distribution(), 300, 3))
+        
+    for i in range(3):
+        # print(generate_complex_normal_distribution())
+        # print(type(generate_complex_normal_distribution()))
+        
+        print(compute_channel_gain(generate_complex_normal_distribution(), 400, 3))
+    
+    
+    for i in range(3):
+        # print(generate_complex_normal_distribution())
+        # print(type(generate_complex_normal_distribution()))
+        
+        print(compute_channel_gain(generate_complex_normal_distribution(), 500, 3))
 
+    for i in range(3):
+        # print(generate_complex_normal_distribution())
+        # print(type(generate_complex_normal_distribution()))
+        
+        print(compute_channel_gain(generate_complex_normal_distribution(), 1500, 3))
+        
+    for i in range(3):
+        # print(generate_complex_normal_distribution())
+        # print(type(generate_complex_normal_distribution()))
+        
+        print(compute_channel_gain(generate_complex_normal_distribution(), 2000, 3))
+    
