@@ -89,12 +89,6 @@ class EnvironmentLoop(core.Worker):
         start_time = time.time()
         episode_steps = 0
         
-        cumulative_rewards: float = 0
-        average_vehicle_interferences: float = 0
-        average_service_times: float = 0 
-        successful_serviceds: float = 0
-        task_required_numbers: float = 0
-        
         # For evaluation, this keeps track of the total undiscounted reward
         # accumulated during the episode.
         episode_return = tree.map_structure(_generate_zeros_from_spec,
@@ -112,11 +106,20 @@ class EnvironmentLoop(core.Worker):
         select_action_time = 0
         environment_step_time = 0
         observer_and_update_time = 0
-        reward_1 = 0
-        vehicle_transmission_times = []
-        vehicle_wired_transmission_times = []
-        vehicle_execution_times = [] 
-        rewards_1s = []
+        
+        
+        cumulative_rewards: float = 0
+        average_vehicle_SINRs: float = 0
+        average_vehicle_intar_interferences: float = 0
+        average_vehicle_inter_interferences: float = 0
+        average_vehicle_interferences: float = 0
+        average_transmision_times: float = 0
+        average_wired_transmission_times: float = 0
+        average_execution_times: float = 0
+        average_service_times: float = 0 
+        successful_serviced_numbers: float = 0
+        task_required_numbers: float = 0
+        
         while not timestep.last():
         # Generate an action from the agent's policy and step the environment.
             # print("timestep.observation: ", timestep.observation[:, -2:])
@@ -125,23 +128,28 @@ class EnvironmentLoop(core.Worker):
             select_action_time += time.time() - select_action_time_start
             
             environment_step_time_start = time.time()
-            timestep, cumulative_reward, average_vehicle_interference, average_service_time, successful_serviced, task_required_number, vehicle_transmission_time, vehicle_wired_transmission_time, vehicle_execution_time, rewards_1 = self._environment.step(action)
+            timestep, cumulative_reward, average_vehicle_SINR, average_vehicle_intar_interference, average_vehicle_inter_interference, \
+                average_vehicle_interference, average_transmision_time, average_wired_transmission_time, average_execution_time, average_service_time, successful_serviced_number, task_required_number = self._environment.step(action)
+            
+            cumulative_rewards += cumulative_reward
+            average_vehicle_SINRs += average_vehicle_SINR
+            average_vehicle_intar_interferences += average_vehicle_intar_interference
+            average_vehicle_inter_interferences += average_vehicle_inter_interference 
+            average_vehicle_interferences += average_vehicle_interference
+            average_transmision_times += average_transmision_time
+            average_wired_transmission_times += average_wired_transmission_time
+            average_execution_times += average_execution_time
+            average_service_times += average_service_time
+            successful_serviced_numbers += successful_serviced_number
+            task_required_numbers += task_required_number            
+            
             environment_step_time += time.time() - environment_step_time_start
             
-            vehicle_transmission_times.append(vehicle_transmission_time)
-            vehicle_wired_transmission_times.append(vehicle_wired_transmission_times)
-            vehicle_execution_times.append(vehicle_execution_time)
-            rewards_1s.append(rewards_1)
             # myapp.debug(f"episode_steps: {episode_steps}")
             # myapp.debug(f"timestep.reward: {timestep.reward}")
             
             observer_and_update_time_start = time.time()
-            cumulative_rewards += cumulative_reward
-            average_vehicle_interferences += average_vehicle_interference
-            average_service_times += average_service_time
-            successful_serviceds += successful_serviced
-            task_required_numbers += task_required_number
-            reward_1 += timestep.reward[-1]
+            
             # Have the agent observe the timestep and let the actor update itself.
             self._actor.observe(action, next_timestep=timestep)
             for observer in self._observers:
@@ -182,14 +190,30 @@ class EnvironmentLoop(core.Worker):
             # myapp.debug(f"timestep.reward: {timestep.reward}")
         # Collect the results and combine with counts.
         steps_per_second = episode_steps / (time.time() - start_time)
+        average_vehicle_SINRs /= task_required_numbers
+        average_vehicle_intar_interferences /= task_required_numbers
+        average_vehicle_inter_interferences /= task_required_numbers 
+        average_vehicle_interferences /= task_required_numbers
+        average_transmision_times /= successful_serviced_numbers
+        average_wired_transmission_times /= successful_serviced_numbers
+        average_execution_times /= successful_serviced_numbers
+        average_service_times /= successful_serviced_numbers
+        service_rate = successful_serviced_numbers / task_required_numbers
+        
         result = {
             'episode_length': episode_steps,
             'episode_return': episode_return,
             'steps_per_second': steps_per_second,
             'cumulative_reward': cumulative_rewards,
-            'average_vehicle_interferences': average_vehicle_interferences / task_required_numbers,
-            'average_service_times': average_service_times / task_required_numbers,
-            'service_ratio': successful_serviceds / task_required_numbers,
+            'average_vehicle_SINRs': average_vehicle_SINRs,
+            'average_vehicle_intar_interference': average_vehicle_intar_interferences,
+            'average_vehicle_inter_interference': average_vehicle_inter_interferences,
+            'average_vehicle_interferences': average_vehicle_interferences,
+            'average_transmision_times': average_transmision_times,
+            'average_wired_transmission_times': average_wired_transmission_times,
+            'average_execution_times': average_execution_times,
+            'average_service_times': average_service_times,
+            'service_rate': service_rate,
         }
         result.update(counts)
         for observer in self._observers:

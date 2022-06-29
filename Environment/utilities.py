@@ -278,6 +278,13 @@ class vehicleTrajectoriesProcessor(object):
     def get_latitude_max(self) -> float:
         return self._latitude_max
     
+def compute_channel_gain(
+    rayleigh_distributed_small_scale_fading: np.ndarray,
+    distance: float,
+    path_loss_exponent: int,
+) -> np.ndarray:
+    return rayleigh_distributed_small_scale_fading / np.power(distance, path_loss_exponent / 2)
+    
 def compute_channel_condition(
     channel_fading_gain: float,
     distance: float,
@@ -315,7 +322,7 @@ def compute_SINR(
     # print("noise plus interference: ", (cover_dBm_to_W(white_gaussian_noise) + intra_edge_interference + inter_edge_interference))
     # print("signal: ", channel_condition * cover_mW_to_W(transmission_power))
     return (1.0 / (cover_dBm_to_W(white_gaussian_noise) + intra_edge_interference + inter_edge_interference)) * \
-        channel_condition * cover_mW_to_W(transmission_power)
+        np.power(np.absolute(channel_condition), 2) * cover_mW_to_W(transmission_power)
 
 def compute_SNR(
     white_gaussian_noise: int,
@@ -367,3 +374,18 @@ def cover_W_to_mW(W: float) -> float:
 
 def cover_mW_to_W(mW: float) -> float:
     return mW / 1000
+
+"""Generate a random following the Complex normal distribution, which follows the normal distribution with mean 0 and variance 1"""
+def generate_complex_normal_distribution(size: int = 1):
+    return np.random.normal(loc=0, scale=1, size=size) + 1j * np.random.normal(loc=0, scale=1, size=size)
+
+# def generate_complex_normal_distribution(mean: complex, covariance: np.matrix, size: int = 1):
+#     return np.random.multivariate_normal(mean, covariance, size)
+
+if __name__ == "__main__":
+    for i in range(10):
+        # print(generate_complex_normal_distribution())
+        # print(type(generate_complex_normal_distribution()))
+        
+        print(compute_channel_gain(generate_complex_normal_distribution(), 1, 3))
+

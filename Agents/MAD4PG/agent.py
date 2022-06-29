@@ -56,8 +56,8 @@ class MAD3PGConfig:
         checkpoint: boolean indicating whether to checkpoint the learner.
         accelerator: 'TPU', 'GPU', or 'CPU'. If omitted, the first available accelerator type from ['TPU', 'GPU', 'CPU'] will be selected.
     """
-    discount: float = 0.99
-    batch_size: int = 256
+    discount: float = 0.996
+    batch_size: int = 512
     prefetch_size: int = 4
     target_update_period: int = 100
     variable_update_period: int = 1000
@@ -66,7 +66,7 @@ class MAD3PGConfig:
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
     samples_per_insert: Optional[float] = 32.0
-    n_step: int = 1
+    n_step: int = 5
     sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE

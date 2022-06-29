@@ -15,11 +15,11 @@ class vehicularNetworkEnvConfig:
     
     """Task related."""
     task_number: int = 100
-    task_minimum_data_size: float = 1 * 1024 * 1024 # 1 MB
-    task_maximum_data_size: float = 50 * 1024 * 1024 # 50 MB
+    task_minimum_data_size: float = 1 * 1024 * 1024 * 8 # 1 MB
+    task_maximum_data_size: float = 5 * 1024 * 1024 * 8 # 50 MB
     task_minimum_computation_cycles: float = 10
-    task_maximum_computation_cycles: float = 25 # CPU cycles for processing 1-Byte of data
-    task_minimum_delay_thresholds: float = 3 # seconds
+    task_maximum_computation_cycles: float = 200 # CPU cycles for processing 1-Byte of data
+    task_minimum_delay_thresholds: float = 5 # seconds
     task_maximum_delay_thresholds: float = 10 # seconds
     task_seed: int = 0
     
@@ -28,7 +28,7 @@ class vehicularNetworkEnvConfig:
     edge_power: float = 2000.0 # mW
     edge_bandwidth: float = 10.0  # MHz
     edge_minimum_computing_cycles: float = 3.0 * 1e9 # 1 GHz
-    edge_maximum_computing_cycles: float = 5.0 * 1e9 # 4 GHz
+    edge_maximum_computing_cycles: float = 10.0 * 1e9 # 4 GHz
     communication_range: float = 500.0  # meters
     map_length: float = 3000.0  # meters
     map_width: float = 3000.0  # meters
@@ -37,7 +37,7 @@ class vehicularNetworkEnvConfig:
     """Vehicle related."""
     vehicle_number: Optional[int] = 90 
     trajectories_file_name: str = 'CSV/trajectories_20161116_0800_0850'
-    task_request_rate: float = 1
+    task_request_rate: float = 0.3
     vehicle_seeds: List[int] = dataclasses.field(default_factory=list)
 
     """V2I Transmission related."""

@@ -120,7 +120,7 @@ class MAD3PGLearner(acme.Learner):
             self._target_update_period = target_update_period
 
             # Create optimizers if they aren't given.
-            self._policy_optimizers = policy_optimizers or [snt.optimizers.Adam(learning_rate=1e-4) for _ in range(edge_number)]
+            self._policy_optimizers = policy_optimizers or [snt.optimizers.Adam(learning_rate=1e-5) for _ in range(edge_number)]
             self._critic_optimizers = critic_optimizers or [snt.optimizers.Adam(learning_rate=1e-4) for _ in range(edge_number)]
 
         # Batch dataset and create iterator.
