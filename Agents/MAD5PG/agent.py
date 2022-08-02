@@ -4,7 +4,7 @@ sys.path.append(r"/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Lear
 
 import copy
 import dataclasses
-from typing import Callable, Iterator, List, Optional, Union, Sequence
+from typing import Iterator, List, Optional, Union, Sequence
 import acme
 from acme import adders
 from acme import core
@@ -23,7 +23,7 @@ import reverb
 import sonnet as snt
 import launchpad as lp
 import functools
-import dm_env
+from Utilities.FileOperator import load_obj
 from Agents.MAD5PG.networks import make_default_MAD3PGNetworks, MAD3PGNetwork
 from environment_loop import EnvironmentLoop
 
@@ -57,17 +57,17 @@ class MAD3PGConfig:
         accelerator: 'TPU', 'GPU', or 'CPU'. If omitted, the first available accelerator type from ['TPU', 'GPU', 'CPU'] will be selected.
     """
     discount: float = 0.996
-    batch_size: int = 512
+    batch_size: int = 256
     prefetch_size: int = 4
     target_update_period: int = 100
-    variable_update_period: int = 1000
+    variable_update_period: int = 500
     policy_optimizers: Optional[snt.Optimizer] = None
     critic_optimizers: Optional[snt.Optimizer] = None
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
-    samples_per_insert: Optional[float] = 1.0
-    n_step: int = 1
-    sigma: float = 0.3
+    samples_per_insert: Optional[float] = 32.0
+    n_step: int = 5
+    sigma: float = 0.5
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE
     counter: Optional[counting.Counter] = None
@@ -104,6 +104,7 @@ class MAD3PGAgent(agent.Agent):
         if networks is None:
             online_networks = make_default_MAD3PGNetworks(
                 action_spec=environment_spec.edge_actions,
+                sigma=self._config.sigma,
             )
         else:
             online_networks = networks
@@ -118,7 +119,7 @@ class MAD3PGAgent(agent.Agent):
         target_networks.init(self._environment_spec)
             
         # Create the behavior policy.
-        policy_networks = online_networks.make_policy(self._environment_spec, self._config.sigma)
+        policy_networks = online_networks.make_policy()
 
         # Create the replay server and grab its address.
         replay_tables = self.make_replay_tables(self._environment_spec)
@@ -289,7 +290,7 @@ class MultiAgentDistributedDDPG:
     def __init__(
         self,
         config: MAD3PGConfig,
-        environment_factory: Callable[[bool], dm_env.Environment],
+        environment_file_name: str,
         environment_spec,
         networks: Optional[MAD3PGNetwork] = None,
         num_actors: int = 1,
@@ -311,11 +312,14 @@ class MultiAgentDistributedDDPG:
         self._log_every = log_every
         self._networks = networks
         self._environment_spec = environment_spec
-        self._environment_factory = environment_factory
+        self._environment_file_name = environment_file_name
         # Create the agent.
+        
+        environment = load_obj(environment_file_name)
+        
         self._agent = MAD3PGAgent(
             config=self._config,
-            environment=self._environment_factory(False),
+            environment=environment,
             environment_spec=self._environment_spec,
             networks=self._networks,
         )
@@ -379,10 +383,10 @@ class MultiAgentDistributedDDPG:
         
         networks.init(self._environment_spec)
 
-        policy_networks = networks.make_policy(environment_spec=self._environment_spec, sigma=self._config.sigma)
+        policy_networks = networks.make_policy()
         
         # Create the environment
-        environment = self._environment_factory(False)
+        environment = load_obj(self._environment_file_name)
 
         # Create the agent.
         actor = self._agent.make_actor(
@@ -395,7 +399,7 @@ class MultiAgentDistributedDDPG:
         counter = counting.Counter(counter, 'actor')
         logger = loggers.make_default_logger(
             'actor',
-            save_data=False,
+            save_data=True,
             time_delta=self._log_every,
             steps_key='actor_steps')
 
@@ -420,10 +424,10 @@ class MultiAgentDistributedDDPG:
         networks = self._networks
         networks.init(self._environment_spec)
         
-        policy_networks = networks.make_policy(self._environment_spec)
+        policy_networks = networks.make_policy()
         
         # Make the environment
-        environment = self._environment_factory(True)
+        environment = load_obj(self._environment_file_name)
 
         # Create the agent.
         actor = self._agent.make_actor(

@@ -52,23 +52,12 @@ class MAD3PGNetwork:
         
 
     def make_policy(
-        self,
-        environment_spec,
-        sigma: float = 0.0,
+        self
     ) -> snt.Module:
         """Create a single network which evaluates the policy."""
         # Stack the observation and policy networks.
 
         stacks = [self.observation_network, self.policy_network]
-
-        # If a stochastic/non-greedy policy is requested, add Gaussian noise on
-        # top to enable a simple form of exploration.
-        # TODO: Refactor this to remove it from the class.
-        if sigma > 0.0:
-            stacks += [
-                network_utils.ClippedGaussian(sigma),
-                network_utils.ClipToSpec(environment_spec.edge_actions),   # Clip to action spec.
-            ]
                 
         # Return a network which sequentially evaluates everything in the stack.
         return snt.Sequential(stacks)
@@ -88,6 +77,7 @@ def make_policy_network(
         policy_network = snt.Sequential([
             networks.LayerNormMLP(policy_layer_sizes, activate_final=True),
             networks.NearZeroInitializedLinear(num_dimensions),
+            networks.TanhToSpec(action_spec),
             network_utils.ClippedGaussian(sigma),
             networks.TanhToSpec(action_spec),
         ])
@@ -102,10 +92,8 @@ def make_default_MAD3PGNetworks(
     vmin: float = -150.,
     vmax: float = 150.,
     num_atoms: int = 51,
-    edge_number: int = 9,
+    sigma: float = 0.3,
 ):
-    from Agents.MAD4PG.agent import MAD3PGNetwork
-
     # Get total number of action dimensions from action spec.
     num_dimensions = np.prod(action_spec.shape, dtype=int)
 
@@ -116,6 +104,7 @@ def make_default_MAD3PGNetworks(
     policy_network = snt.Sequential([
         networks.LayerNormMLP(policy_layer_sizes, activate_final=True),
         networks.NearZeroInitializedLinear(num_dimensions),
+        network_utils.ClippedGaussian(sigma),
         networks.TanhToSpec(action_spec),
     ])
 

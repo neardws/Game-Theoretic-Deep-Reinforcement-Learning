@@ -35,7 +35,7 @@ class vehicularNetworkEnvConfig:
     edge_seed: int = 0
     
     """Vehicle related."""
-    vehicle_number: Optional[int] = 90 
+    vehicle_number: Optional[int] = 27
     trajectories_file_name: str = 'CSV/trajectories_20161116_0800_0850'
     task_request_rate: float = 0.3
     vehicle_seeds: List[int] = dataclasses.field(default_factory=list)

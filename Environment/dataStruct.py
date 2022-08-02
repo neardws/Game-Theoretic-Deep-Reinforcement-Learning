@@ -1,4 +1,5 @@
 
+from operator import index
 import re
 import numpy as np
 import pandas as pd
@@ -141,8 +142,8 @@ class trajectory(object):
         """
         self._locations = locations
 
-        if len(self._locations) != timeSlots.get_number():
-            raise ValueError("The number of locations must be equal to the max_timestampes.")
+        # if len(self._locations) != timeSlots.get_number():
+        #     raise ValueError("The number of locations must be equal to the max_timestampes.")
 
     def __str__(self) -> str:
         return str([str(location) for location in self._locations])
@@ -154,7 +155,10 @@ class trajectory(object):
         Returns:
             the location.
         """
-        return self._locations[nowTimeSlot]
+        try:
+            return self._locations[nowTimeSlot]
+        except IndexError:
+            return None
 
     def get_locations(self) -> List[location]:
         """ get the locations.

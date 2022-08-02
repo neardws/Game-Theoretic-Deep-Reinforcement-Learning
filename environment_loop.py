@@ -119,12 +119,14 @@ class EnvironmentLoop(core.Worker):
         average_service_times: float = 0 
         successful_serviced_numbers: float = 0
         task_required_numbers: float = 0
-        
+        average_service_rate: float = 0
         while not timestep.last():
         # Generate an action from the agent's policy and step the environment.
             # print("timestep.observation: ", timestep.observation[:, -2:])
             select_action_time_start = time.time()
             action = self._actor.select_action(timestep.observation)
+            
+            # print("action: ", action)
             select_action_time += time.time() - select_action_time_start
             
             environment_step_time_start = time.time()
@@ -141,7 +143,8 @@ class EnvironmentLoop(core.Worker):
             average_execution_times += average_execution_time
             average_service_times += average_service_time
             successful_serviced_numbers += successful_serviced_number
-            task_required_numbers += task_required_number            
+            task_required_numbers += task_required_number
+            average_service_rate += cumulative_reward         
             
             environment_step_time += time.time() - environment_step_time_start
             
@@ -199,7 +202,7 @@ class EnvironmentLoop(core.Worker):
         average_execution_times /= successful_serviced_numbers
         average_service_times /= successful_serviced_numbers
         service_rate = successful_serviced_numbers / task_required_numbers
-        
+        average_service_rate /= episode_steps
         result = {
             'episode_length': episode_steps,
             'episode_return': episode_return,
@@ -213,7 +216,7 @@ class EnvironmentLoop(core.Worker):
             'average_wired_transmission_times': average_wired_transmission_times,
             'average_execution_times': average_execution_times,
             'average_service_times': average_service_times,
-            'service_rate': service_rate,
+            'service_rate': average_service_rate,
         }
         result.update(counts)
         for observer in self._observers:
