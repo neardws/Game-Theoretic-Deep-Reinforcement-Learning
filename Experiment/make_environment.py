@@ -15,7 +15,7 @@ def get_default_environment(
     ) -> Tuple[timeSlots, taskList, vehicleList, edgeList, np.ndarray, np.ndarray, List[List[List[int]]], vehicularNetworkEnvConfig, vehicularNetworkEnv]:
     
     environment_config = vehicularNetworkEnvConfig(
-        task_request_rate=0.35,
+        task_request_rate=0.3,
     )
     environment_config.vehicle_seeds += [i for i in range(environment_config.vehicle_number)]
     

@@ -120,7 +120,7 @@ class MAD3PGLearner(acme.Learner):
             self._target_update_period = target_update_period
 
             # Create optimizers if they aren't given.
-            self._policy_optimizers = policy_optimizers or snt.optimizers.Adam(learning_rate=1e-5) 
+            self._policy_optimizers = policy_optimizers or snt.optimizers.Adam(learning_rate=1e-4) 
             self._critic_optimizers = critic_optimizers or snt.optimizers.Adam(learning_rate=1e-4)
 
         # Batch dataset and create iterator.
@@ -244,21 +244,21 @@ class MAD3PGLearner(acme.Learner):
                 # Actor learning
                 policy_a_t = self._policy_networks(o_t)
                 
-                dpg_a_t = tf2_utils.batch_concat([
-                        edge_next_a_t[:, : edge_index, :],
-                        edge_next_a_t[:, edge_index + 1 :, :],
-                        policy_a_t,
-                    ])
+                # dpg_a_t = tf2_utils.batch_concat([
+                #         edge_next_a_t[:, : edge_index, :],
+                #         edge_next_a_t[:, edge_index + 1 :, :],
+                #         policy_a_t,
+                #     ])
                 
-                # if edge_index == 0:
-                #     dpg_a_t = policy_a_t
-                # else:
-                #     dpg_a_t = edge_next_a_t[:, 0, :]
-                # for i in range(self._edge_number):
-                #     if i != 0 and i != edge_index:
-                #         dpg_a_t = tf.concat([dpg_a_t, edge_next_a_t[:, i, :]], axis=1)
-                #     elif i != 0 and i == edge_index:
-                #         dpg_a_t = tf.concat([dpg_a_t, policy_a_t], axis=1)
+                if edge_index == 0:
+                    dpg_a_t = policy_a_t
+                else:
+                    dpg_a_t = edge_next_a_t[:, 0, :]
+                for i in range(self._edge_number):
+                    if i != 0 and i != edge_index:
+                        dpg_a_t = tf.concat([dpg_a_t, edge_next_a_t[:, i, :]], axis=1)
+                    elif i != 0 and i == edge_index:
+                        dpg_a_t = tf.concat([dpg_a_t, policy_a_t], axis=1)
                 
                 dpg_z_t = self._critic_networks(o_t, dpg_a_t)
                 dpg_q_t = dpg_z_t.mean()
@@ -268,7 +268,7 @@ class MAD3PGLearner(acme.Learner):
                 # myapp.debug(f"dpg_a_t: {np.array(dpg_a_t)}")
                 policy_loss = losses.dpg(
                     dpg_q_t,
-                    policy_a_t,
+                    dpg_a_t,
                     tape=tape,
                     dqda_clipping=dqda_clipping,
                     clip_norm=self._clipping)
@@ -276,12 +276,9 @@ class MAD3PGLearner(acme.Learner):
                 
                 # myapp.debug(f"policy_loss: {np.array(policy_loss)}")
 
-            
-            
             new_critic_losses = tf.reduce_mean(tf.stack(critic_losses, axis=0))
             new_policy_losses = tf.reduce_mean(tf.stack(policy_losses, axis=0))
         
-            
             # for i in range(self._edge_number):
             #     myapp.debug(f"new_critic_losses {i}: {np.array(new_critic_losses[i])}")
             #     myapp.debug(f"new_policy_losses {i}: {np.array(new_policy_losses[i])}")

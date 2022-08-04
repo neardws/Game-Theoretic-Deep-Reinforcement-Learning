@@ -15,20 +15,20 @@ class vehicularNetworkEnvConfig:
     
     """Task related."""
     task_number: int = 100
-    task_minimum_data_size: float = 1 * 1024 * 1024 * 8 # 1 MB
-    task_maximum_data_size: float = 5 * 1024 * 1024 * 8 # 50 MB
-    task_minimum_computation_cycles: float = 10
-    task_maximum_computation_cycles: float = 200 # CPU cycles for processing 1-Byte of data
-    task_minimum_delay_thresholds: float = 5 # seconds
-    task_maximum_delay_thresholds: float = 10 # seconds
+    task_minimum_data_size: float = 0.1 * 1024 * 1024 * 8 # 0.1 MB
+    task_maximum_data_size: float = 5 * 1024 * 1024 * 8 # 5 MB
+    task_minimum_computation_cycles: float = 200
+    task_maximum_computation_cycles: float = 500 # CPU cycles for processing 1-Byte of data
+    task_minimum_delay_thresholds: float = 1 # seconds
+    task_maximum_delay_thresholds: float = 5 # seconds
     task_seed: int = 0
     
     """"Edge related."""
     edge_number: int = 9
     edge_power: float = 2000.0 # mW
     edge_bandwidth: float = 10.0  # MHz
-    edge_minimum_computing_cycles: float = 3.0 * 1e9 # 1 GHz
-    edge_maximum_computing_cycles: float = 10.0 * 1e9 # 4 GHz
+    edge_minimum_computing_cycles: float = 0.5 * 1e9 # 1 GHz
+    edge_maximum_computing_cycles: float = 3.0 * 1e9 # 4 GHz
     communication_range: float = 500.0  # meters
     map_length: float = 3000.0  # meters
     map_width: float = 3000.0  # meters

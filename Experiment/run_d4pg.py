@@ -1,6 +1,6 @@
 from Environment.environment import make_environment_spec
-from Agents.MAD4PG.networks import make_default_MAD3PGNetworks
-from Agents.MAD4PG.agent import MAD3PGConfig, MAD3PGAgent
+from Agents.MAD4PG.networks import make_default_networks
+from Agents.MAD4PG.agent import D4PGConfig, D4PG
 from Experiment.make_environment import get_default_environment
 from environment_loop import EnvironmentLoop
 
@@ -12,13 +12,13 @@ def main(_):
     spec = make_environment_spec(environment)
 
     # Create the networks.
-    networks = make_default_MAD3PGNetworks(
+    networks = make_default_networks(
         action_spec=spec.edge_actions,
     )
 
-    agent_config = MAD3PGConfig()
+    agent_config = D4PGConfig()
 
-    agent = MAD3PGAgent(
+    agent = D4PG(
         config=agent_config,
         environment = environment,
         environment_spec=spec,
