@@ -37,7 +37,7 @@ def main(_):
         discount=0.996,
         target_update_period=100,
         variable_update_period=1000,
-        max_actor_steps=300*5000,
+        max_actor_steps=300*15000,
         log_every=5.0,
     )
 

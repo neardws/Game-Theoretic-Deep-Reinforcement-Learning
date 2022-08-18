@@ -201,8 +201,8 @@ class EnvironmentLoop(core.Worker):
         average_wired_transmission_times /= successful_serviced_numbers
         average_execution_times /= successful_serviced_numbers
         average_service_times /= successful_serviced_numbers
-        service_rate = successful_serviced_numbers / task_required_numbers
-        average_service_rate /= episode_steps
+        average_service_rate = successful_serviced_numbers / task_required_numbers
+        # average_service_rate /= episode_steps
         result = {
             'episode_length': episode_steps,
             'episode_return': episode_return,
