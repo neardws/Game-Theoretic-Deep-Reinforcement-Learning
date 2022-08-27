@@ -11,11 +11,11 @@ from Utilities.FileOperator import save_obj, init_file_name
 def get_default_environment(
         flatten_space: Optional[bool] = False,
         occuiped: Optional[bool] = False,
-        for_mad5pg: Optional[bool] = False,
+        for_mad5pg: Optional[bool] = True,
     ) -> Tuple[timeSlots, taskList, vehicleList, edgeList, np.ndarray, np.ndarray, List[List[List[int]]], vehicularNetworkEnvConfig, vehicularNetworkEnv]:
     
     environment_config = vehicularNetworkEnvConfig(
-        task_request_rate=0.3,
+        task_request_rate=0.5,
     )
     environment_config.vehicle_seeds += [i for i in range(environment_config.vehicle_number)]
     

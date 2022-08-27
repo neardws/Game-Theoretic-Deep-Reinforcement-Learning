@@ -24,6 +24,8 @@ def main(_):
     
     # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-04-15-29-30/init_environment_a9adbef00fb04877aaa84caf9741e56e.pkl"
     
+    environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-26-22-14-42/init_environment_b4c58534a68741a0a3f5ed7cdee07a2b.pkl"
+    
     environment = load_obj(environment_file_name)
     env_spec = make_environment_spec(environment)
 

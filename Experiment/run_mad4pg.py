@@ -9,11 +9,21 @@ def main(_):
     
     # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-02-15-20-31/init_environment_9f109dd07f5c45c48802b6e3d80d274b.pkl"
     
-    environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-03-20-01-43/init_environment_7936536bea754ae4a054c88902c9e45c.pkl"
+    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-03-20-01-43/init_environment_7936536bea754ae4a054c88902c9e45c.pkl"
+    
+    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-18-20-58-30/init_environment_d06e96e064fa468881e8de106a76be15.pkl"
+    
+    # environment_file_name = '/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-18-22-04-34/init_environment_e39444cb392049fa8b717f2fc5131b93.pkl'
+    
+    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-19-10-15-18/init_environment_e5015f69c37844bdadc10f810f0b0da3.pkl"
+    
+    environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-19-16-16-34/init_environment_8c527fc0d7bc42a88805026db0d62637.pkl"
+    
+    environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-08-27-20-08-48/init_environment_f5cdab66747c41aaaef9dc7bf81962bc.pkl"
+    
     environment = load_obj(environment_file_name)
     
     spec = make_environment_spec(environment)    
-    
     
     networks = make_default_networks(
         agent_number=9,
@@ -22,7 +32,7 @@ def main(_):
 
     agent = DistributedD4PG(
         agent_number=9,
-        agent_action_size=30,
+        agent_action_size=27,
         environment_file=environment_file_name,
         networks=networks,
         num_actors=10,

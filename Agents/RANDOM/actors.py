@@ -40,4 +40,5 @@ def _validate_spec(spec: types.NestedSpec, value: types.NestedArray):
 
 def _generate_from_spec(spec: types.NestedSpec) -> types.NestedArray:
     """Generate a value from a potentially nested spec."""
+    # print(tree.map_structure(lambda s: np.random.random(size=s.shape), spec))
     return tree.map_structure(lambda s: np.random.random(size=s.shape), spec)

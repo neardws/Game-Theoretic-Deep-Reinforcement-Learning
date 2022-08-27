@@ -197,10 +197,16 @@ class EnvironmentLoop(core.Worker):
         average_vehicle_intar_interferences /= task_required_numbers
         average_vehicle_inter_interferences /= task_required_numbers 
         average_vehicle_interferences /= task_required_numbers
-        average_transmision_times /= successful_serviced_numbers
-        average_wired_transmission_times /= successful_serviced_numbers
-        average_execution_times /= successful_serviced_numbers
-        average_service_times /= successful_serviced_numbers
+        
+        average_transmision_times /= task_required_numbers
+        average_wired_transmission_times /= task_required_numbers
+        average_execution_times /= task_required_numbers
+        average_service_times /= task_required_numbers
+        
+        # average_transmision_times /= successful_serviced_numbers
+        # average_wired_transmission_times /= successful_serviced_numbers
+        # average_execution_times /= successful_serviced_numbers
+        # average_service_times /= successful_serviced_numbers
         average_service_rate = successful_serviced_numbers / task_required_numbers
         # average_service_rate /= episode_steps
         result = {

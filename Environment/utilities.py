@@ -355,7 +355,7 @@ def cover_Mbps_to_bps(Mbps: float) -> float:
     return Mbps * 1000000
 
 def cover_MHz_to_Hz(MHz: float) -> float:
-    return MHz * 1e6
+    return MHz * 1000000
 
 def cover_ratio_to_dB(ratio: float) -> float:
     return 10 * np.log10(ratio)
