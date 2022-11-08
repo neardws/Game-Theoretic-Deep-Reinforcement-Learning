@@ -26,9 +26,9 @@ class vehicularNetworkEnv(dm_env.Environment):
         channel_condition_matrix: Optional[np.ndarray] = None, 
         vehicle_index_within_edges: Optional[List[List[List[int]]]] = None,
         vehicle_observed_index_within_edges: Optional[List[List[List[int]]]] = None,
-        flatten_space: Optional[bool] = False,
+        flatten_space: Optional[bool] = True,
         occuiped: Optional[bool] = False,
-        for_mad5pg: Optional[bool] = True,
+        for_mad5pg: Optional[bool] = False,
     ) -> None:
         """Initialize the environment."""
         if envConfig is None:

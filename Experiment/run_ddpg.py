@@ -1,55 +1,61 @@
 import sys
+
+import scipy as sp
 sys.path.append(r"/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/")
 from environment_loop import EnvironmentLoop
+from Agents.DDPG.agent import DDPG, make_default_networks
 from Environment.environment import make_environment_spec
-from Agents.DDPG.agent import DDPG
-from acme import types
-from typing import Dict, Sequence
-import sonnet as snt
-from acme.tf import networks
-import numpy as np
-import tensorflow as tf
-from Experiment.make_environment import get_default_environment
-
-def make_networks(
-    action_spec: types.NestedSpec,
-    policy_layer_sizes: Sequence[int] = (128, 128),
-    critic_layer_sizes: Sequence[int] = (256, 128),
-    ) -> Dict[str, snt.Module]:
-    """Creates networks used by the agent."""
-
-    num_dimensions = np.prod(action_spec.shape, dtype=int)
-    policy_layer_sizes = list(policy_layer_sizes) + [num_dimensions]
-    critic_layer_sizes = list(critic_layer_sizes) + [1]
-
-    policy_network = snt.Sequential(
-        [networks.LayerNormMLP(policy_layer_sizes), tf.tanh])
-    # The multiplexer concatenates the (maybe transformed) observations/actions.
-    critic_network = networks.CriticMultiplexer(
-        critic_network=networks.LayerNormMLP(critic_layer_sizes))
-
-    return {
-        'policy': policy_network,
-        'critic': critic_network,
-    }
+from Utilities.FileOperator import load_obj
 
 def main(_):
     
-    __, __, __, __, __, __, __, __, environment = get_default_environment(flatten_space=True)
+    # different scenario
+    # scneario 1
+    environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/2022-10-05-17-04-03/global_environment_72604a5e5b364143b36131abaffb8b31.pkl"
+    # scneario 2
+    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/scenarios/scenario_2/old_environment_b624df881ef4447ba4f64825347c4f62.pkl"
+    # scenario 3
+    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/scenarios/scenario_3/old_environment_f64be56731574faf9d005c17db90874e.pkl"
+    # scenario 4
+    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/scenarios/scenario_4/old_environment_e49cf126ed0749e6bf3835f6dbb27ff2.pkl"
 
     
-    env_spec = make_environment_spec(environment)
+    # different compuation resources 
+    # CPU 1-10GHz
+    # environment_file_name = ""
+    # CPU 2-10GHz
+    # environment_file_name = ""
+    # CPU 4-10GHz
+    # environment_file_name = ""
+    # CPU 5-10GHz
+    # environment_file_name = ""
     
-    agent_networks = make_networks(env_spec.actions)
+    # different task number
+    # 0.3
+    # environment_file_name = ""
+    # 0.4
+    # environment_file_name = ""
+    # 0.6
+    # environment_file_name = ""
+    # 0.7
+    # environment_file_name = ""
+    
+    environment = load_obj(environment_file_name)
+
+    spec = make_environment_spec(environment)
+    print(spec.actions)
+    print(spec.observations)
+    
+        
+    observation_network, policy_network, critic_network = make_default_networks(spec.actions)
     
     agent = DDPG(
-        environment_spec=env_spec,
-        policy_network=agent_networks['policy'],
-        critic_network=agent_networks['critic'],
+        environment_spec=spec,
+        policy_network=policy_network,
+        critic_network=critic_network,
+        observation_network=observation_network,
     )
-
     
-    # Create the environment loop used for training.
-    train_loop = EnvironmentLoop(environment, agent, label='train_loop')
+    loop = EnvironmentLoop(environment, agent)
+    loop.run(5000)
 
-    train_loop.run(num_episodes=5000)

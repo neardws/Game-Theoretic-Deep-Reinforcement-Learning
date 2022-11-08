@@ -1,4 +1,5 @@
 import pickle
+from telnetlib import OLD_ENVIRON
 import uuid
 import os
 import datetime
@@ -35,8 +36,18 @@ def init_file_name():
         os.makedirs(pwd)
 
     uuid_str = uuid.uuid4().hex
-    init_environment_name = pwd + '/' + 'init_environment_%s.pkl' % uuid_str
-
+    convex_environment_name = pwd + '/' + 'convex_environment_%s.pkl' % uuid_str
+    random_environment_name = pwd + '/' + 'random_environment_%s.pkl' % uuid_str
+    local_environment_name = pwd + '/' + 'local_environment_%s.pkl' % uuid_str
+    edge_environment_name = pwd + '/' + 'edge_environment_%s.pkl' % uuid_str
+    old_environment_name = pwd + '/' + 'old_environment_%s.pkl' % uuid_str
+    global_environment_name = pwd + '/' + 'global_environment_%s.pkl' % uuid_str
+    
     return {
-        "init_environment_name": init_environment_name,
+        "convex_environment_name": convex_environment_name,
+        "random_environment_name": random_environment_name,
+        "local_environment_name": local_environment_name,
+        "edge_environment_name": edge_environment_name,
+        "old_environment_name": old_environment_name,
+        "global_environment_name": global_environment_name,
     }
