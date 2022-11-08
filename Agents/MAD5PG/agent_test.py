@@ -6,8 +6,8 @@ import acme
 import launchpad as lp
 from absl.testing import absltest
 from Environment.environment import vehicularNetworkEnv, make_environment_spec
-from Agents.MAD4PG.networks import make_default_MAD3PGNetworks
-from Agents.MAD4PG.agent import MultiAgentDistributedDDPG, MAD3PGConfig
+from Agents.MAD5PG.networks import make_default_MAD3PGNetworks
+from Agents.MAD5PG.agent import MultiAgentDistributedDDPG, MAD3PGConfig
 from Experiment.make_environment import get_default_environment
 
 
@@ -18,7 +18,7 @@ class DistributedAgentTest(absltest.TestCase):
         """Tests that the agent can run on the control suite without crashing."""
 
         time_slots, task_list, vehicle_list, edge_list, distance_matrix, channel_condition_matrix, \
-        vehicle_index_within_edges, environment_config, environment = get_default_environment()
+        vehicle_index_within_edges, environment_config, environment = get_default_environment(for_mad5pg=True)
     
         spec = make_environment_spec(environment)
 

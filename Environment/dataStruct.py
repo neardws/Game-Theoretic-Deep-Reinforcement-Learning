@@ -1,4 +1,5 @@
 
+from operator import index
 import re
 import numpy as np
 import pandas as pd
@@ -141,8 +142,8 @@ class trajectory(object):
         """
         self._locations = locations
 
-        if len(self._locations) != timeSlots.get_number():
-            raise ValueError("The number of locations must be equal to the max_timestampes.")
+        # if len(self._locations) != timeSlots.get_number():
+        #     raise ValueError("The number of locations must be equal to the max_timestampes.")
 
     def __str__(self) -> str:
         return str([str(location) for location in self._locations])
@@ -154,7 +155,10 @@ class trajectory(object):
         Returns:
             the location.
         """
-        return self._locations[nowTimeSlot]
+        try:
+            return self._locations[nowTimeSlot]
+        except IndexError:
+            return None
 
     def get_locations(self) -> List[location]:
         """ get the locations.
@@ -237,8 +241,18 @@ class edgeList(object):
         self._uniformed = uniformed
         self._seed = seed
         if uniformed:
-            np.random.seed(seed)
-            self._computing_speeds = np.random.uniform(self._minimum_computing_cycles, self._maximum_computing_cycles, self._edge_number)
+            # np.random.seed(seed)
+            # self._computing_speeds = np.random.uniform(self._minimum_computing_cycles, self._maximum_computing_cycles, self._edge_number)
+            # 3 - 10
+            self._computing_speeds = [3.0 * 1e9, 10.0 * 1e9, 3.0 * 1e9, 10.0 * 1e9, 6.0 * 1e9, 10.0 * 1e9, 3.0 * 1e9, 10.0 * 1e9, 3.0 * 1e9]
+            # 1 - 10
+            # self._computing_speeds = [1.0 * 1e9, 8.0 * 1e9, 1.0 * 1e9, 10.0 * 1e9, 4.0 * 1e9, 10.0 * 1e9, 1.0 * 1e9, 8.0 * 1e9, 1.0 * 1e9]
+            # 2 - 10
+            # self._computing_speeds = [2.0 * 1e9, 9.0 * 1e9, 2.0 * 1e9, 10.0 * 1e9, 5.0 * 1e9, 10.0 * 1e9, 2.0 * 1e9, 9.0 * 1e9, 2.0 * 1e9]
+            # 4 - 10
+            # self._computing_speeds = [4.5 * 1e9, 10.0 * 1e9, 4.5 * 1e9, 10.0 * 1e9, 7.0 * 1e9, 10.0 * 1e9, 4.5 * 1e9, 10.0 * 1e9, 4.5 * 1e9]
+            # 5 - 10
+            # self._computing_speeds = [6 * 1e9, 10.0 * 1e9, 6 * 1e9, 10.0 * 1e9, 8.0 * 1e9, 10.0 * 1e9, 6 * 1e9, 10.0 * 1e9, 6 * 1e9]
             self._edge_list = [edge(edge_index, self._power, self._bandwidth, computing_speed, self._communication_range, edge_x, edge_y) for edge_index, computing_speed, edge_x, edge_y in zip(range(edge_number), self._computing_speeds, self._edge_xs, self._edge_ys)]
         else:
             pass

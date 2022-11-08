@@ -1,161 +1,136 @@
-"""D3PG agent implementation."""
-import sys
-sys.path.append(r"/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/")
+# Copyright 2018 DeepMind Technologies Limited. All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""D4PG agent implementation."""
 
 import copy
 import dataclasses
-from typing import Callable, Iterator, List, Optional, Union, Sequence
-import acme
+import functools
+from typing import Iterator, List, Optional, Tuple, Union, Sequence
+
 from acme import adders
 from acme import core
 from acme import datasets
+from acme import specs
+from acme import types
 from acme.adders import reverb as reverb_adders
-from Agents.MAD4PG import actors
-from Agents.MAD4PG import learning
 from acme.agents import agent
+from Agents.MAD4PG.actors import FeedForwardActor
+from Agents.MAD4PG.learning import D4PGLearner
+from acme.tf import networks as network_utils
+from acme.tf import utils
 from acme.tf import variable_utils
-from acme.tf import savers as tf2_savers
 from acme.utils import counting
 from acme.utils import loggers
-from acme.utils import lp_utils
-import tensorflow as tf
 import reverb
 import sonnet as snt
-import launchpad as lp
-import functools
-import dm_env
-from Agents.MAD4PG.networks import make_default_MAD3PGNetworks, MAD3PGNetwork
-from environment_loop import EnvironmentLoop
+import tensorflow as tf
 
 Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
 
-# Valid values of the "accelerator" argument.
-_ACCELERATORS = ('GPU', 'TPU')
 
 @dataclasses.dataclass
-class MAD3PGConfig:
-    """Configuration options for the MAD3PG agent.
-    Args:
-        discount: discount to use for TD updates.
-        batch_size: batch size for updates.
-        prefetch_size: size to prefetch from replay.
-        target_update_period: number of learner steps to perform before updating
-            the target networks.
-        policy_optimizer: optimizer for the policy network updates.
-        critic_optimizer: optimizer for the critic network updates.
-        min_replay_size: minimum replay size before updating.
-        max_replay_size: maximum replay size.
-        samples_per_insert: number of samples to take from replay for every insert
-            that is made.
-        n_step: number of steps to squash into a single transition.
-        sigma: standard deviation of zero-mean, Gaussian exploration noise.
-        clipping: whether to clip gradients by global norm.
-        replay_table_name: string indicating what name to give the replay table.
-        counter: counter object used to keep track of steps.
-        logger: logger object to be used by learner.
-        checkpoint: boolean indicating whether to checkpoint the learner.
-        accelerator: 'TPU', 'GPU', or 'CPU'. If omitted, the first available accelerator type from ['TPU', 'GPU', 'CPU'] will be selected.
-    """
-    discount: float = 0.996
-    batch_size: int = 512
+class D4PGConfig:
+    """Configuration options for the D4PG agent."""
+
+    accelerator: Optional[str] = None
+    discount: float = 0.99
+    batch_size: int = 256
     prefetch_size: int = 4
     target_update_period: int = 100
     variable_update_period: int = 1000
-    policy_optimizers: Optional[List[snt.Optimizer]] = None
-    critic_optimizers: Optional[List[snt.Optimizer]] = None
+    policy_optimizer: Optional[List[snt.Optimizer]] = None
+    critic_optimizer: Optional[List[snt.Optimizer]] = None
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
-    samples_per_insert: Optional[float] = 1.0
-    n_step: int = 1
+    samples_per_insert: Optional[float] = 32.0
+    n_step: int = 5
     sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE
-    counter: Optional[counting.Counter] = None
-    logger: Optional[loggers.Logger] = None
-    checkpoint: bool = True
-    accelerator: Optional[str] = 'GPU'
 
 
-class MAD3PGAgent(agent.Agent):
-    """D3PG Agent.
-    This implements a single-process D3PG agent. This is an actor-critic algorithm
-    that generates data via a behavior policy, inserts N-step transitions into
-    a replay buffer, and periodically updates the policy (and as a result the
-    behavior) by sampling uniformly from this buffer.
-    """
+@dataclasses.dataclass
+class D4PGNetworks:
+    """Structure containing the networks for D4PG."""
+
+    policy_network: snt.Module
+    critic_network: snt.Module
+    observation_network: snt.Module
 
     def __init__(
         self,
-        config: MAD3PGConfig,
-        environment,
-        environment_spec,
-        networks: Optional[List[MAD3PGNetwork]] = None,
+        policy_network: snt.Module,
+        critic_network: snt.Module,
+        observation_network: types.TensorTransformation,
     ):
-        """Initialize the agent.
-        Args:
-            config: Configuration for the agent.
-        """
+        # This method is implemented (rather than added by the dataclass decorator)
+        # in order to allow observation network to be passed as an arbitrary tensor
+        # transformation rather than as a snt Module.
+        # TODO(mwhoffman): use Protocol rather than Module/TensorTransformation.
+        self.policy_network = policy_network
+        self.critic_network = critic_network
+        self.observation_network = utils.to_sonnet_module(observation_network)
+
+    def init(self, environment_spec: specs.EnvironmentSpec):
+        """Initialize the networks given an environment spec."""
+        # Get observation and action specs.
+        act_spec = environment_spec.critic_actions
+        obs_spec = environment_spec.edge_observations
+
+        # Create variables for the observation net and, as a side-effect, get a
+        # spec describing the embedding space.
+        emb_spec = utils.create_variables(self.observation_network, [obs_spec])
+
+        # Create variables for the policy and critic nets.
+        _ = utils.create_variables(self.policy_network, [emb_spec])
+        _ = utils.create_variables(self.critic_network, [emb_spec, act_spec])
+
+    def make_policy(
+        self,
+        environment_spec: specs.EnvironmentSpec,
+        sigma: float = 0.0,
+    ) -> snt.Module:
+        """Create a single network which evaluates the policy."""
+        # Stack the observation and policy networks.
+        stack = [
+            self.observation_network,
+            self.policy_network,
+        ]
+
+        # If a stochastic/non-greedy policy is requested, add Gaussian noise on
+        # top to enable a simple form of exploration.
+        # TODO(mwhoffman): Refactor this to remove it from the class.
+        if sigma > 0.0:
+            stack += [
+                network_utils.ClippedGaussian(sigma),
+                network_utils.ClipToSpec(environment_spec.edge_actions),
+            ]
+
+        # Return a network which sequentially evaluates everything in the stack.
+        return snt.Sequential(stack)
+
+
+class D4PGBuilder:
+    """Builder for D4PG which constructs individual components of the agent."""
+
+    def __init__(self, config: D4PGConfig):
         self._config = config
-        self._accelerator = config.accelerator
-
-        if not self._accelerator:
-            self._accelerator = get_first_available_accelerator_type(['TPU', 'GPU', 'CPU'])
-
-        if networks is None:
-            online_networks = make_default_MAD3PGNetworks(
-                action_spec=environment_spec.edge_actions,
-            )
-        else:
-            online_networks = networks
-
-        self._environment = environment
-        self._environment_spec = environment_spec
-        # Target networks are just a copy of the online networks.
-        target_networks = [copy.deepcopy(online_networks[i]) for i in range(len(online_networks))]
-
-        # Initialize the networks.
-        for i in range(len(online_networks)):
-            online_networks[i].init(self._environment_spec)
-            target_networks[i].init(self._environment_spec)
-
-        # Create the behavior policy.
-        policy_networks = [online_networks[i].make_policy(self._environment_spec, self._config.sigma) for i in range(len(online_networks))]
-
-        # Create the replay server and grab its address.
-        replay_tables = self.make_replay_tables(self._environment_spec)
-        replay_server = reverb.Server(replay_tables, port=None)
-        replay_client = reverb.Client(f'localhost:{replay_server.port}')
-
-        # Create actor, dataset, and learner for generating, storing, and consuming
-        # data respectively.
-        adder = self.make_adder(replay_client=replay_client)
-        actor = self.make_actor(
-            policy_networks=policy_networks, 
-            adder=adder,
-        )
-        
-        dataset = self.make_dataset_iterator(replay_client=replay_client)
-        learner = self.make_learner(
-            online_networks=online_networks,
-            target_networks=target_networks,
-            dataset=dataset,
-            counter=self._config.counter,
-            logger=self._config.logger,
-            checkpoint=self._config.checkpoint,
-        )
-
-        super().__init__(
-            actor=actor,
-            learner=learner,
-            min_observations=max(self._config.batch_size, self._config.min_replay_size),
-            observations_per_step=float(self._config.batch_size) / self._config.samples_per_insert)
-
-        # Save the replay so we don't garbage collect it.
-        self._replay_server = replay_server
 
     def make_replay_tables(
         self,
-        environment_spec,
+        environment_spec: specs.EnvironmentSpec,
     ) -> List[reverb.Table]:
         """Create tables to insert data into."""
         if self._config.samples_per_insert is None:
@@ -185,26 +160,26 @@ class MAD3PGAgent(agent.Agent):
 
     def make_dataset_iterator(
         self,
-        replay_client: reverb.Client,
+        reverb_client: reverb.Client,
     ) -> Iterator[reverb.ReplaySample]:
         """Create a dataset iterator to use for learning/updating the agent."""
         # The dataset provides an interface to sample from replay.
         dataset = datasets.make_reverb_dataset(
             table=self._config.replay_table_name,
-            server_address=replay_client.server_address,
+            server_address=reverb_client.server_address,
             batch_size=self._config.batch_size,
             prefetch_size=self._config.prefetch_size)
 
         replicator = get_replicator(self._config.accelerator)
         dataset = replicator.experimental_distribute_dataset(dataset)
 
-        # TODO: Fix type stubs and remove.
+        # TODO(b/155086959): Fix type stubs and remove.
         return iter(dataset)  # pytype: disable=wrong-arg-types
 
     def make_adder(
         self,
         replay_client: reverb.Client,
-    ) -> adders.Adder: 
+    ) -> adders.Adder:
         """Create an adder which records data generated by the actor/environment."""
         return reverb_adders.NStepTransitionAdder(
             priority_fns={self._config.replay_table_name: lambda x: 1.},
@@ -214,6 +189,8 @@ class MAD3PGAgent(agent.Agent):
 
     def make_actor(
         self,
+        agent_number: int,
+        agent_action_size: int,
         policy_networks: List[snt.Module],
         adder: Optional[adders.Adder] = None,
         variable_source: Optional[core.VariableSource] = None,
@@ -221,12 +198,9 @@ class MAD3PGAgent(agent.Agent):
         """Create an actor instance."""
         if variable_source:
             # Create the variable client responsible for keeping the actor up-to-date.
-            variables = dict()
-            for i in range(len(policy_networks)):
-                variables['policy_network_' + str(i)] = policy_networks[i].variables
             variable_client = variable_utils.VariableClient(
                 client=variable_source,
-                variables=variables,
+                variables={'policy_%d'% i: policy_network.variables for i, policy_network in enumerate(policy_networks)},
                 update_period=self._config.variable_update_period,
             )
 
@@ -238,274 +212,221 @@ class MAD3PGAgent(agent.Agent):
             variable_client = None
 
         # Create the actor which defines how we take actions.
-        return actors.FeedForwardActor(
+        return FeedForwardActor(
+            agent_number=agent_number,
+            agent_action_size=agent_action_size,
             policy_networks=policy_networks,
-            edge_number=self._environment._config.edge_number,
-            edge_action_size=self._environment._config.action_size,
             adder=adder,
             variable_client=variable_client,
         )
 
     def make_learner(
         self,
-        online_networks: List[MAD3PGNetwork], 
-        target_networks: List[MAD3PGNetwork],
+        agent_number: int,
+        agent_action_size: int,
+        networks: Tuple[List[D4PGNetworks], List[D4PGNetworks]],
         dataset: Iterator[reverb.ReplaySample],
         counter: Optional[counting.Counter] = None,
         logger: Optional[loggers.Logger] = None,
         checkpoint: bool = False,
     ):
         """Creates an instance of the learner."""
-        # The learner updates the parameters (and initializes them).
-        return learning.MAD3PGLearner(
-            policy_networks=[online_networks[i].policy_network for i in range(len(online_networks))],
-            critic_networks=[online_networks[i].critic_network for i in range(len(online_networks))],
+        online_networks, target_networks = networks
 
-            target_policy_networks=[target_networks[i].policy_network for i in range(len(target_networks))],
-            target_critic_networks=[target_networks[i].critic_network for i in range(len(target_networks))],
+        # The learner updates the parameters (and initializes them).
+        return D4PGLearner(
+            agent_number=agent_number,
+            agent_action_size=agent_action_size,
             
+            online_networks=online_networks,
+            target_networks=target_networks,
+            # policy_network=online_networks.policy_network,
+            # critic_network=online_networks.critic_network,
+            # observation_network=online_networks.observation_network,
+            # target_policy_network=target_networks.policy_network,
+            # target_critic_network=target_networks.critic_network,
+            # target_observation_network=target_networks.observation_network,
+            policy_optimizer=self._config.policy_optimizer,
+            critic_optimizer=self._config.critic_optimizer,
+            clipping=self._config.clipping,
             discount=self._config.discount,
             target_update_period=self._config.target_update_period,
             dataset_iterator=dataset,
-
-            observation_networks=[online_networks[i].observation_network for i in range(len(online_networks))],
-            target_observation_networks=[target_networks[i].observation_network for i in range(len(target_networks))],
-
-            policy_optimizers=self._config.policy_optimizers,
-            critic_optimizers=self._config.critic_optimizers,
-
-            clipping=self._config.clipping,
             replicator=get_replicator(self._config.accelerator),
-
             counter=counter,
             logger=logger,
             checkpoint=checkpoint,
-
-            edge_number=self._environment._config.edge_number,
-            edge_action_size=self._environment._config.action_size,
         )
 
 
-class MultiAgentDistributedDDPG:
-    """Program definition for MAD4PG."""
+class D4PG(agent.Agent):
+    """D4PG Agent.
+
+    This implements a single-process D4PG agent. This is an actor-critic algorithm
+    that generates data via a behavior policy, inserts N-step transitions into
+    a replay buffer, and periodically updates the policy (and as a result the
+    behavior) by sampling uniformly from this buffer.
+    """
+
     def __init__(
         self,
-        config: MAD3PGConfig,
-        environment_factory: Callable[[bool], dm_env.Environment],
-        environment_spec,
-        networks: Optional[List[MAD3PGNetwork]] = None,
-        num_actors: int = 1,
-        num_caches: int = 0,
-        max_actor_steps: Optional[int] = None,
-        log_every: float = 5.0,
+        agent_number: int,
+        agent_action_size: int,
+        environment_spec: specs.EnvironmentSpec,
+        policy_network: snt.Module,
+        critic_network: snt.Module,
+        observation_network: types.TensorTransformation = tf.identity,
+        accelerator: Optional[str] = None,
+        discount: float = 0.99,
+        batch_size: int = 256,
+        prefetch_size: int = 4,
+        target_update_period: int = 100,
+        policy_optimizer: Optional[snt.Optimizer] = None,
+        critic_optimizer: Optional[snt.Optimizer] = None,
+        min_replay_size: int = 1000,
+        max_replay_size: int = 1000000,
+        samples_per_insert: float = 32.0,
+        n_step: int = 5,
+        sigma: float = 0.3,
+        clipping: bool = True,
+        replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE,
+        counter: Optional[counting.Counter] = None,
+        logger: Optional[loggers.Logger] = None,
+        checkpoint: bool = True,
     ):
-        """Initialize the MAD3PG agent."""
-        self._config = config
+        """Initialize the agent.
 
-        self._accelerator = config.accelerator
-        if self._accelerator is not None and self._accelerator not in _ACCELERATORS:
-            raise ValueError(f'Accelerator must be one of {_ACCELERATORS}, '
-                            f'not "{self._accelerator}".')
+        Args:
+        environment_spec: description of the actions, observations, etc.
+        policy_network: the online (optimized) policy.
+        critic_network: the online critic.
+        observation_network: optional network to transform the observations before
+            they are fed into any network.
+        accelerator: 'TPU', 'GPU', or 'CPU'. If omitted, the first available
+            accelerator type from ['TPU', 'GPU', 'CPU'] will be selected.
+        discount: discount to use for TD updates.
+        batch_size: batch size for updates.
+        prefetch_size: size to prefetch from replay.
+        target_update_period: number of learner steps to perform before updating
+            the target networks.
+        policy_optimizer: optimizer for the policy network updates.
+        critic_optimizer: optimizer for the critic network updates.
+        min_replay_size: minimum replay size before updating.
+        max_replay_size: maximum replay size.
+        samples_per_insert: number of samples to take from replay for every insert
+            that is made.
+        n_step: number of steps to squash into a single transition.
+        sigma: standard deviation of zero-mean, Gaussian exploration noise.
+        clipping: whether to clip gradients by global norm.
+        replay_table_name: string indicating what name to give the replay table.
+        counter: counter object used to keep track of steps.
+        logger: logger object to be used by learner.
+        checkpoint: boolean indicating whether to checkpoint the learner.
+        """
+        if not accelerator:
+            accelerator = _get_first_available_accelerator_type(['TPU', 'GPU', 'CPU'])
+            
+        self._agent_number = agent_number
+        self._agent_action_size = agent_action_size
 
-        self._num_actors = num_actors
-        self._num_caches = num_caches
-        self._max_actor_steps = max_actor_steps
-        self._log_every = log_every
-        self._networks = networks
-        self._environment_spec = environment_spec
-        self._environment_factory = environment_factory
-        # Create the agent.
-        self._agent = MAD3PGAgent(
-            config=self._config,
-            environment=self._environment_factory(False),
-            environment_spec=self._environment_spec,
-            networks=self._networks,
-        )
+        # Create the Builder object which will internally create agent components.
+        builder = D4PGBuilder(
+            # TODO(mwhoffman): pass the config dataclass in directly.
+            # TODO(mwhoffman): use the limiter rather than the workaround below.
+            # Right now this modifies min_replay_size and samples_per_insert so that
+            # they are not controlled by a limiter and are instead handled by the
+            # Agent base class (the above TODO directly references this behavior).
+            D4PGConfig(
+                accelerator=accelerator,
+                discount=discount,
+                batch_size=batch_size,
+                prefetch_size=prefetch_size,
+                target_update_period=target_update_period,
+                policy_optimizer=policy_optimizer,
+                critic_optimizer=critic_optimizer,
+                min_replay_size=1,  # Let the Agent class handle this.
+                max_replay_size=max_replay_size,
+                samples_per_insert=None,  # Let the Agent class handle this.
+                n_step=n_step,
+                sigma=sigma,
+                clipping=clipping,
+                replay_table_name=replay_table_name,
+            ))
 
-    def replay(self):
-        """The replay storage."""
-        return self._agent.make_replay_tables(self._environment_spec)
-
-    def counter(self):
-        return tf2_savers.CheckpointingRunner(counting.Counter(),
-                                            time_delta_minutes=30,
-                                            subdirectory='counter')
-
-    def coordinator(self, counter: counting.Counter):
-        return lp_utils.StepsLimiter(counter, self._max_actor_steps)
-
-    def learner(
-        self,
-        replay: reverb.Client,
-        counter: counting.Counter,
-    ):
-        """The Learning part of the agent."""
-        
-        # If we are running on multiple accelerator devices, this replicates
-        # weights and updates across devices.
-        replicator = get_replicator(self._accelerator)
+        replicator = get_replicator(accelerator)
 
         with replicator.scope():
-            # Create the networks to optimize (online) and target networks.
-            online_networks = self._networks
-            target_networks = [copy.deepcopy(online_networks[i]) for i in range(len(online_networks))]
+            # TODO(mwhoffman): pass the network dataclass in directly.
+            online_networks = []
+            target_networks = []
+            for _ in range(self._agent_number):
+                online_network = D4PGNetworks(policy_network=policy_network,
+                                            critic_network=critic_network,
+                                            observation_network=observation_network)
 
-            # Initialize the networks.
-            for i in range(len(online_networks)):
-                online_networks[i].init(self._environment_spec)
-                target_networks[i].init(self._environment_spec)
+                # Target networks are just a copy of the online networks.
+                target_network = copy.deepcopy(online_network)
 
-        dataset = self._agent.make_dataset_iterator(replay)
-        counter = counting.Counter(counter, 'learner')
-        logger = loggers.make_default_logger(
-            'learner', time_delta=self._log_every, steps_key='learner_steps')
+                # Initialize the networks.
+                online_network.init(environment_spec)
+                target_network.init(environment_spec)
+                online_networks.append(online_network)
+                target_networks.append(target_network)
 
-        return self._agent.make_learner(
-            online_networks=online_networks, 
-            target_networks=target_networks,
+        # TODO(mwhoffman): either make this Dataclass or pass only one struct.
+        # The network struct passed to make_learner is just a tuple for the
+        # time-being (for backwards compatibility).
+        networks = (online_networks, target_networks)
+
+        # Create the behavior policy.
+        policy_networks = []
+        for i in range(self._agent_number):
+            policy_network = online_networks[i].make_policy(environment_spec, sigma)
+            policy_networks.append(policy_network)
+
+        # Create the replay server and grab its address.
+        replay_tables = builder.make_replay_tables(environment_spec)
+        replay_server = reverb.Server(replay_tables, port=None)
+        replay_client = reverb.Client(f'localhost:{replay_server.port}')
+
+        # Create actor, dataset, and learner for generating, storing, and consuming
+        # data respectively.
+        adder = builder.make_adder(replay_client)
+        actor = builder.make_actor(
+            agent_number=self._agent_number, 
+            agent_action_size=self._agent_action_size, 
+            policy_networks=policy_networks, 
+            adder=adder
+        )
+        dataset = builder.make_dataset_iterator(replay_client)
+        learner = builder.make_learner(
+            agent_number=self._agent_number,
+            agent_action_size=self._agent_action_size,
+            networks=networks, 
             dataset=dataset,
             counter=counter,
             logger=logger,
-            checkpoint=True,
-        )
+            checkpoint=checkpoint)
 
-    def actor(
-        self,
-        replay: reverb.Client,
-        variable_source: acme.VariableSource,
-        counter: counting.Counter,
-    ) -> EnvironmentLoop:
-        """The actor process."""
+        super().__init__(
+            actor=actor,
+            learner=learner,
+            min_observations=max(batch_size, min_replay_size),
+            observations_per_step=float(batch_size) / samples_per_insert)
 
-        # Create the behavior policy.        
-        networks = self._networks
-        
-        for i in range(len(networks)):
-            networks[i].init(self._environment_spec)
-
-        policy_networks = [
-            networks[i].make_policy(environment_spec=self._environment_spec, sigma=self._config.sigma)
-            for i in range(len(networks))
-        ]
-        
-        # Create the environment
-        environment = self._environment_factory(False)
-
-        # Create the agent.
-        actor = self._agent.make_actor(
-            policy_networks=policy_networks,
-            adder=self._agent.make_adder(replay),
-            variable_source=variable_source,
-        )
-
-        # Create logger and counter; actors will not spam bigtable.
-        counter = counting.Counter(counter, 'actor')
-        logger = loggers.make_default_logger(
-            'actor',
-            save_data=False,
-            time_delta=self._log_every,
-            steps_key='actor_steps')
-
-        # Create the loop to connect environment and agent.
-        return EnvironmentLoop(
-            environment=environment, 
-            actor=actor, 
-            counter=counter, 
-            logger=logger,
-            label='Actor_Loop',    
-        )
-
-    def evaluator(
-        self,
-        variable_source: acme.VariableSource,
-        counter: counting.Counter,
-        logger: Optional[loggers.Logger] = None,
-    ):
-        """The evaluation process."""
-
-        # Create the behavior policy.
-        networks = self._networks
-        for i in range(len(networks)):
-            networks[i].init(self._environment_spec)
-        
-        policy_networks = [
-            networks[i].make_policy(self._environment_spec) for i in range(len(networks))
-        ]
-        
-        # Make the environment
-        environment = self._environment_factory(True)
-
-        # Create the agent.
-        actor = self._agent.make_actor(
-            policy_networks=policy_networks,
-            variable_source=variable_source,
-        )
-
-        # Create logger and counter.
-        counter = counting.Counter(counter, 'evaluator')
-        logger = logger or loggers.make_default_logger(
-            'evaluator',
-            time_delta=self._log_every,
-            steps_key='evaluator_steps',
-        )
-
-        # Create the run loop and return it.
-        return EnvironmentLoop(
-            environment=environment, 
-            actor=actor, 
-            counter=counter, 
-            logger=logger,
-            label='Evaluator_Loop',
-        )
-
-    def build(self, name='mad4pg'):
-        """Build the distributed agent topology."""
-        program = lp.Program(name=name)
-
-        with program.group('replay'):
-            replay = program.add_node(lp.ReverbNode(self.replay))
-
-        with program.group('counter'):
-            counter = program.add_node(lp.CourierNode(self.counter))
-
-        if self._max_actor_steps:
-            with program.group('coordinator'):
-                _ = program.add_node(lp.CourierNode(self.coordinator, counter))
-
-        with program.group('learner'):
-            learner = program.add_node(lp.CourierNode(self.learner, replay, counter))
-
-        with program.group('evaluator'):
-            program.add_node(lp.CourierNode(self.evaluator, learner, counter))
-
-        if not self._num_caches:
-            # Use our learner as a single variable source.
-            sources = [learner]
-        else:
-            with program.group('cacher'):
-                # Create a set of learner caches.
-                sources = []
-                for _ in range(self._num_caches):
-                    cacher = program.add_node(
-                        lp.CacherNode(
-                            learner, refresh_interval_ms=2000, stale_after_ms=4000))
-                sources.append(cacher)
-
-        with program.group('actor'):
-            # Add actors which pull round-robin from our variable sources.
-            for actor_id in range(self._num_actors):
-                source = sources[actor_id % len(sources)]
-                program.add_node(lp.CourierNode(self.actor, replay, source, counter))
-
-        return program
+        # Save the replay so we don't garbage collect it.
+        self._replay_server = replay_server
 
 
-def ensure_accelerator(accelerator: str) -> str:
+def _ensure_accelerator(accelerator: str) -> str:
     """Checks for the existence of the expected accelerator type.
+
     Args:
         accelerator: 'CPU', 'GPU' or 'TPU'.
+
     Returns:
         The validated `accelerator` argument.
+
     Raises:
         RuntimeError: Thrown if the expected accelerator isn't found.
     """
@@ -520,14 +441,17 @@ def ensure_accelerator(accelerator: str) -> str:
         raise RuntimeError('\n'.join(error_messages))
 
 
-def get_first_available_accelerator_type(
+def _get_first_available_accelerator_type(
     wishlist: Sequence[str] = ('TPU', 'GPU', 'CPU')) -> str:
     """Returns the first available accelerator type listed in a wishlist.
+
     Args:
         wishlist: A sequence of elements from {'CPU', 'GPU', 'TPU'}, listed in
         order of descending preference.
+
     Returns:
         The first available accelerator type from `wishlist`.
+
     Raises:
         RuntimeError: Thrown if no accelerators from the `wishlist` are found.
     """
@@ -550,19 +474,22 @@ def get_first_available_accelerator_type(
 @functools.lru_cache()
 def get_replicator(accelerator: Optional[str]) -> Replicator:
     """Returns a replicator instance appropriate for the given accelerator.
+
     This caches the instance using functools.cache, so that only one replicator
     is instantiated per process and argument value.
+
     Args:
         accelerator: None, 'TPU', 'GPU', or 'CPU'. If None, the first available
         accelerator type will be chosen from ('TPU', 'GPU', 'CPU').
+
     Returns:
         A replicator, for replciating weights, datasets, and updates across
         one or more accelerators.
     """
     if accelerator:
-        accelerator = ensure_accelerator(accelerator)
+        accelerator = _ensure_accelerator(accelerator)
     else:
-        accelerator = get_first_available_accelerator_type()
+        accelerator = _get_first_available_accelerator_type()
 
     if accelerator == 'TPU':
         tf.tpu.experimental.initialize_tpu_system()
