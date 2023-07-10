@@ -132,3 +132,10 @@ dmypy.json
 ./CSV/*
 CSV/* 
 CSV/
+Data/
+Data/*
+Draw/
+Draw/*
+Figure/
+Figure/*
+
