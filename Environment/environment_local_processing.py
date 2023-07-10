@@ -146,7 +146,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         self._time_slots.add_time()
         return dm_env.transition(observation=observation, reward=self._reward), cumulative_reward, average_vehicle_SINR, average_vehicle_intar_interference, average_vehicle_inter_interference, \
             average_vehicle_interference, average_transmision_time, average_wired_transmission_time, average_execution_time, average_service_time, successful_serviced_number, task_offloaded_number, task_required_number
-    
+
     def get_transmission_power_with_convex_optimization(self):
         
         vehicle_SINR = np.zeros((self._config.vehicle_number, self._config.edge_number + 1))
@@ -291,7 +291,7 @@ class vehicularNetworkEnv(dm_env.Environment):
             task_assignment = np.reshape(task_assignment, newshape=(self._config.vehicle_number_within_edges, self._config.edge_number))
             
             for i in range(int(vehicle_number_within_edge)):
-                processing_edge_index = int(task_assignment[i, :].argmax())
+                processing_edge_index = int(edge_index)
                 
                 vehicle_index = vehicle_observed_index_within_edge[i]                    
                 if self._vehicle_list.get_vehicle_by_index(vehicle_index).get_requested_task_by_slot_index(self._time_slots.now()) != -1:
@@ -520,7 +520,7 @@ class vehicularNetworkEnv(dm_env.Environment):
         
         return rewards, cumulative_reward, average_vehicle_SINR, average_vehicle_intar_interference, average_vehicle_inter_interference, average_vehicle_interference, average_transmision_time, average_wired_transmission_time, average_execution_time, average_service_time, successful_serviced_number, task_offloaded_number, task_required_number
     
-
+    
     """Define the action spaces of edge in critic network."""
     def critic_network_action_spec(self) -> specs.BoundedArray:
         """Define and return the action space."""

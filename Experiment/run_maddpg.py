@@ -1,9 +1,10 @@
 import launchpad as lp
-from Environment.environment_old import make_environment_spec
-from Agents.MAD4PG.networks import make_default_networks
-from Agents.MAD4PG.agent_distributed import DistributedD4PG
+from Environment.environment import make_environment_spec
+from Agents.MADDPG.networks import make_default_networks
+from Agents.MADDPG.agent import DDPG
+from Agents.MADDPG.agent_distributed import DistributedDDPG
 from Utilities.FileOperator import load_obj
-
+from environment_loop import EnvironmentLoop
 
 def main(_):
     
@@ -17,25 +18,6 @@ def main(_):
     # scenario 4
     # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/scenarios/scenario_4/convex_environment_1bc5da3127734abc9d015bccf84bc1c0.pkl"
     
-    # different bandwidth 
-    # bandwidth 10 MHz
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/bandwidth/bandwidth10/convex_environment_0c3404cb7b094635b93478b7ed8414d4.pkl"
-    # bandwidth 15 MHz
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/bandwidth/bandwidth15/convex_environment_2aa46263ed1543a9b1724f2ae1e15517.pkl"
-    # bandwidth 25 MHz
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/bandwidth/bandwidth25/convex_environment_73e7ad98699f41ac9e940690c9bbf274.pkl"
-    # bandwidth 30 MHz
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/bandwidth/bandwidth30/convex_environment_99c0184f2a2f44ffa51e8570a3c56e44.pkl"
-    
-    # different power 
-    # power 100 mW
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/power/100mW/convex_environment_a7be501bbb0449e78ba3d18a915190f0.pkl"
-    # power 550 mW
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/power/550mW/convex_environment_d242a140f3a54b03af77a22a3e4698fe.pkl"
-    # power 1450 mW
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/power/1450mW/convex_environment_13da0cdb1f0f40849099c080b17e60bf.pkl"
-    # power 1900 mW
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/power/1900mW/convex_environment_4f77862d11a1479898416ea261c93b66.pkl"
     
     # different compuation resources 
     # CPU 1-10GHz
@@ -48,8 +30,6 @@ def main(_):
     # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/computation/5GHz/convex_environment_68eaeca4ef604e68b4753ad37530e431.pkl"
     
     # different task number
-    # 0.1
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/task_number/0_1/convex_environment_323579c648bf4169abcefc1c8036f79c.pkl"
     # 0.3
     # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/task_number/0_3/convex_environment_590cd268b35a4e79b5b5216ee06e9ef3.pkl"
     # 0.4
@@ -57,9 +37,7 @@ def main(_):
     # 0.6
     # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/task_number/0_6/convex_environment_05727ef5311540ca84b4c596a73987cd.pkl"
     # 0.7
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/task_number/0_7/convex_environment_c2ea75aa7cce404e9d9f8af15d49369f.pkl"
-    # 0.9
-    # environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/task_number/0_9/convex_environment_02893eba453a40638713178e264ec23e.pkl"
+    environment_file_name = "/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Learning/Data/task_number/0_7/convex_environment_c2ea75aa7cce404e9d9f8af15d49369f.pkl"
     
     environment = load_obj(environment_file_name)
     
@@ -70,13 +48,12 @@ def main(_):
         action_spec=spec.edge_actions,
     )
 
-    agent = DistributedD4PG(
+    agent = DDPG(
         agent_number=9,
         agent_action_size=27,
         environment_file=environment_file_name,
-        networks=networks,
-        num_actors=10,
         environment_spec=spec,
+        networks=networks,
         batch_size=256,
         prefetch_size=4,
         min_replay_size=1000,
@@ -86,12 +63,8 @@ def main(_):
         sigma=0.3,
         discount=0.996,
         target_update_period=100,
-        variable_update_period=1000,
-        max_actor_steps=300*25000,
-        log_every=5.0,
     )
 
-    program = agent.build()
-    
-    lp.launch(program, launch_type="local_mt", serialize_py_nodes=False)
+    loop = EnvironmentLoop(environment, agent)
+    loop.run(num_episodes=4100)
         

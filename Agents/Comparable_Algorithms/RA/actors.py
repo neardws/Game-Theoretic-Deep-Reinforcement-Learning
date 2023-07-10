@@ -16,7 +16,7 @@
 """Generic actor implementation, using TensorFlow and Sonnet."""
 
 from typing import Optional, List
-
+import numpy as np
 from acme import adders
 from acme import core
 from acme import types
@@ -42,10 +42,10 @@ class FeedForwardActor(core.Actor):
 
     def __init__(
         self,
-        agent_number: int,
-        agent_action_size: int,
+        agent_number: int = None,
+        agent_action_size: int = None,
         
-        policy_networks: List[snt.Module],
+        policy_networks: List[snt.Module] = None,
         adder: Optional[adders.Adder] = None,
         variable_client: Optional[tf2_variable_utils.VariableClient] = None,
     ):
@@ -68,19 +68,9 @@ class FeedForwardActor(core.Actor):
         self._agent_action_size = agent_action_size
         
 
-    @tf.function
+    # @tf.function
     def _policy(self, observations: types.NestedTensor) -> types.NestedTensor:
-        agent_actions = []
-        for i in range(self._agent_number):
-            agent_observation = observations[i, :]
-            # Add a dummy batch dimension and as a side effect convert numpy to TF.
-            agent_batched_observation = tf2_utils.add_batch_dim(agent_observation)
-            # Compute the policy, conditioned on the observation.
-            agent_policy = self._policy_networks[i](agent_batched_observation)
-            # Sample from the policy if it is stochastic.
-            agent_action = agent_policy.sample() if isinstance(agent_policy, tfd.Distribution) else agent_policy
-            agent_actions.append(agent_action)
-            
+        agent_actions = np.random.random(size=[self._agent_number, self._agent_action_size])
         agent_actions = tf.convert_to_tensor(agent_actions, dtype=tf.float64)
         action = tf.reshape(agent_actions, [self._agent_number, self._agent_action_size])
         return action

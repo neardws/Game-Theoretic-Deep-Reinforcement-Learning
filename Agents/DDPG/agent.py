@@ -15,8 +15,9 @@
 """DDPG agent implementation."""
 
 import copy
+import numpy as np
 from typing import Optional
-
+from typing import Mapping, Sequence, List
 from acme import datasets
 from acme import specs
 from acme import types
@@ -171,3 +172,37 @@ class DDPG(agent.Agent):
             learner=learner,
             min_observations=max(batch_size, min_replay_size),
             observations_per_step=float(batch_size) / samples_per_insert)
+        
+
+
+def make_default_networks(
+    action_spec: specs.BoundedArray,
+    policy_layer_sizes: Sequence[int] = (256, 256, 256),
+    critic_layer_sizes: Sequence[int] = (512, 512, 256),
+    vmin: float = -150.,
+    vmax: float = 150.,
+    num_atoms: int = 51,
+):
+    """Creates networks used by the agent."""
+
+    # Get total number of action dimensions from action spec.
+    num_dimensions = np.prod(action_spec.shape, dtype=int)
+
+    # Create the shared observation network; here simply a state-less operation.
+    observation_network = tf2_utils.batch_concat
+
+    # Create the policy network.
+    policy_network = snt.Sequential([
+        networks.LayerNormMLP(policy_layer_sizes, activate_final=True),
+        networks.NearZeroInitializedLinear(num_dimensions),
+        networks.TanhToSpec(action_spec),
+    ])
+
+    # Create the critic network.
+    critic_network = snt.Sequential([
+        # The multiplexer concatenates the observations/actions.
+        networks.CriticMultiplexer(),
+        networks.LayerNormMLP(critic_layer_sizes, activate_final=True),
+        networks.DiscreteValuedHead(vmin, vmax, num_atoms),
+    ])
+    return observation_network, policy_network, critic_network

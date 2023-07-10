@@ -139,7 +139,7 @@ class DDPGLearner(acme.Learner):
         # fill the replay buffer.
         self._timestamp = None
 
-    @tf.function
+    # @tf.function
     def _step(self):
         # Update target network.
         online_variables = (

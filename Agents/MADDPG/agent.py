@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""D4PG agent implementation."""
+"""DDPG agent implementation."""
 
 import copy
 import dataclasses
@@ -26,9 +26,10 @@ from acme import specs
 from acme import types
 from acme.adders import reverb as reverb_adders
 from acme.agents import agent
-from Agents.MAD4PG.actors import FeedForwardActor
-from Agents.MAD4PG.learning import D4PGLearner
+from Agents.MADDPG.actors import FeedForwardActor
+from Agents.MADDPG.learning import DDPGLearner
 from acme.tf import networks as network_utils
+from Utilities.FileOperator import load_obj
 from acme.tf import utils
 from acme.tf import variable_utils
 from acme.utils import counting
@@ -41,8 +42,8 @@ Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
 
 
 @dataclasses.dataclass
-class D4PGConfig:
-    """Configuration options for the D4PG agent."""
+class DDPGConfig:
+    """Configuration options for the DDPG agent."""
 
     accelerator: Optional[str] = None
     discount: float = 0.99
@@ -55,15 +56,15 @@ class D4PGConfig:
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
     samples_per_insert: Optional[float] = 32.0
-    n_step: int = 5
+    n_step: int = 1
     sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE
 
 
 @dataclasses.dataclass
-class D4PGNetworks:
-    """Structure containing the networks for D4PG."""
+class DDPGNetworks:
+    """Structure containing the networks for DDPG."""
 
     policy_network: snt.Module
     critic_network: snt.Module
@@ -122,10 +123,10 @@ class D4PGNetworks:
         return snt.Sequential(stack)
 
 
-class D4PGBuilder:
-    """Builder for D4PG which constructs individual components of the agent."""
+class DDPGBuilder:
+    """Builder for DDPG which constructs individual components of the agent."""
 
-    def __init__(self, config: D4PGConfig):
+    def __init__(self, config: DDPGConfig):
         self._config = config
 
     def make_replay_tables(
@@ -224,7 +225,7 @@ class D4PGBuilder:
         self,
         agent_number: int,
         agent_action_size: int,
-        networks: Tuple[List[D4PGNetworks], List[D4PGNetworks]],
+        networks: Tuple[List[DDPGNetworks], List[DDPGNetworks]],
         dataset: Iterator[reverb.ReplaySample],
         counter: Optional[counting.Counter] = None,
         logger: Optional[loggers.Logger] = None,
@@ -234,7 +235,7 @@ class D4PGBuilder:
         online_networks, target_networks = networks
 
         # The learner updates the parameters (and initializes them).
-        return D4PGLearner(
+        return DDPGLearner(
             agent_number=agent_number,
             agent_action_size=agent_action_size,
             
@@ -259,10 +260,10 @@ class D4PGBuilder:
         )
 
 
-class D4PG(agent.Agent):
-    """D4PG Agent.
+class DDPG(agent.Agent):
+    """DDPG Agent.
 
-    This implements a single-process D4PG agent. This is an actor-critic algorithm
+    This implements a single-process DDPG agent. This is an actor-critic algorithm
     that generates data via a behavior policy, inserts N-step transitions into
     a replay buffer, and periodically updates the policy (and as a result the
     behavior) by sampling uniformly from this buffer.
@@ -272,10 +273,9 @@ class D4PG(agent.Agent):
         self,
         agent_number: int,
         agent_action_size: int,
+        environment_file: str,
         environment_spec: specs.EnvironmentSpec,
-        policy_network: snt.Module,
-        critic_network: snt.Module,
-        observation_network: types.TensorTransformation = tf.identity,
+        networks: List[DDPGNetworks],
         accelerator: Optional[str] = None,
         discount: float = 0.99,
         batch_size: int = 256,
@@ -286,7 +286,7 @@ class D4PG(agent.Agent):
         min_replay_size: int = 1000,
         max_replay_size: int = 1000000,
         samples_per_insert: float = 32.0,
-        n_step: int = 5,
+        n_step: int = 1,
         sigma: float = 0.3,
         clipping: bool = True,
         replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE,
@@ -328,15 +328,22 @@ class D4PG(agent.Agent):
             
         self._agent_number = agent_number
         self._agent_action_size = agent_action_size
-
+        
+        environment = load_obj(environment_file)
+        if not environment_spec:
+            environment_spec = specs.make_environment_spec(environment)
+        self._environment_spec = environment_spec
+        self._environment_file = environment_file
+        self._sigma = sigma
+        self._networks = networks
         # Create the Builder object which will internally create agent components.
-        builder = D4PGBuilder(
+        builder = DDPGBuilder(
             # TODO(mwhoffman): pass the config dataclass in directly.
             # TODO(mwhoffman): use the limiter rather than the workaround below.
             # Right now this modifies min_replay_size and samples_per_insert so that
             # they are not controlled by a limiter and are instead handled by the
             # Agent base class (the above TODO directly references this behavior).
-            D4PGConfig(
+            DDPGConfig(
                 accelerator=accelerator,
                 discount=discount,
                 batch_size=batch_size,
@@ -357,31 +364,26 @@ class D4PG(agent.Agent):
 
         with replicator.scope():
             # TODO(mwhoffman): pass the network dataclass in directly.
-            online_networks = []
-            target_networks = []
-            for _ in range(self._agent_number):
-                online_network = D4PGNetworks(policy_network=policy_network,
-                                            critic_network=critic_network,
-                                            observation_network=observation_network)
-
-                # Target networks are just a copy of the online networks.
-                target_network = copy.deepcopy(online_network)
-
-                # Initialize the networks.
-                online_network.init(environment_spec)
-                target_network.init(environment_spec)
-                online_networks.append(online_network)
-                target_networks.append(target_network)
+            online_networks = self._networks
+            target_networks = [copy.deepcopy(online_network) for online_network in online_networks]
+            # Initialize the networks.
+            for online_network, target_network in zip(online_networks, target_networks):
+                online_network.init(self._environment_spec)
+                target_network.init(self._environment_spec)
 
         # TODO(mwhoffman): either make this Dataclass or pass only one struct.
         # The network struct passed to make_learner is just a tuple for the
         # time-being (for backwards compatibility).
-        networks = (online_networks, target_networks)
-
         # Create the behavior policy.
+        networks = self._networks
+        for network in networks:
+            network.init(self._environment_spec)
         policy_networks = []
-        for i in range(self._agent_number):
-            policy_network = online_networks[i].make_policy(environment_spec, sigma)
+        for _ in range(self._agent_number):
+            policy_network = networks[_].make_policy(
+                environment_spec=self._environment_spec,
+                sigma=self._sigma,
+            )
             policy_networks.append(policy_network)
 
         # Create the replay server and grab its address.
@@ -393,16 +395,17 @@ class D4PG(agent.Agent):
         # data respectively.
         adder = builder.make_adder(replay_client)
         actor = builder.make_actor(
-            agent_number=self._agent_number, 
-            agent_action_size=self._agent_action_size, 
-            policy_networks=policy_networks, 
-            adder=adder
+            agent_number=self._agent_number,
+            agent_action_size=self._agent_action_size,
+            policy_networks=policy_networks,
+            adder=adder,
         )
+        
         dataset = builder.make_dataset_iterator(replay_client)
         learner = builder.make_learner(
             agent_number=self._agent_number,
             agent_action_size=self._agent_action_size,
-            networks=networks, 
+            networks=(online_networks, target_networks), 
             dataset=dataset,
             counter=counter,
             logger=logger,

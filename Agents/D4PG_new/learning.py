@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""D4PG learner implementation."""
+"""DDPG learner implementation."""
 
 import time
 from typing import Dict, Iterator, List, Optional, Union, Sequence
@@ -35,28 +35,19 @@ Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
 
 
 class D4PGLearner(acme.Learner):
-    """D4PG learner.
+    """DDPG learner.
 
-    This is the learning component of a D4PG agent. IE it takes a dataset as input
+    This is the learning component of a DDPG agent. IE it takes a dataset as input
     and implements update functionality to learn from this dataset.
     """
     def __init__(
         self,
-        agent_number: int,
-        agent_action_size: int,
-        
         online_networks,
         target_networks,
-        # policy_network: snt.Module,
-        # critic_network: snt.Module,
-        # target_policy_network: snt.Module,
-        # target_critic_network: snt.Module,
         discount: float,
         target_update_period: int,
         dataset_iterator: Iterator[reverb.ReplaySample],
         replicator: Optional[Replicator] = None,
-        # observation_network: types.TensorTransformation = lambda x: x,
-        # target_observation_network: types.TensorTransformation = lambda x: x,
         policy_optimizer: Optional[List[snt.Optimizer]] = None,
         critic_optimizer: Optional[List[snt.Optimizer]] = None,
         clipping: bool = True,
@@ -92,15 +83,14 @@ class D4PGLearner(acme.Learner):
         """
 
         # Store online and target networks.
-        self._policy_networks = [online_network.policy_network for online_network in online_networks]
-        self._critic_networks = [online_network.critic_network for online_network in online_networks]
-        self._target_policy_networks = [target_network.policy_network for target_network in target_networks]
-        self._target_critic_networks = [target_network.critic_network for target_network in target_networks]
+        self._policy_network = online_networks.policy_network
+        self._critic_network = online_networks.critic_network 
+        self._target_policy_network = target_networks.policy_network
+        self._target_critic_network = target_networks.critic_network
 
         # Make sure observation networks are snt.Module's so they have variables.
-        self._observation_networks = [tf2_utils.to_sonnet_module(online_network.observation_network) for online_network in online_networks]
-        self._target_observation_networks = [tf2_utils.to_sonnet_module(
-            target_network.observation_network) for target_network in target_networks]
+        self._observation_network = tf2_utils.to_sonnet_module(online_networks.observation_network)
+        self._target_observation_network = tf2_utils.to_sonnet_module(target_networks.observation_network)
 
         # General learner book-keeping and loggers.
         self._counter = counter or counting.Counter()
@@ -109,9 +99,6 @@ class D4PGLearner(acme.Learner):
         # Other learner parameters.
         self._discount = discount
         self._clipping = clipping
-        
-        self._agent_number = agent_number
-        self._agent_action_size = agent_action_size
 
         # Replicates Variables across multiple accelerators
         if not replicator:
@@ -129,19 +116,18 @@ class D4PGLearner(acme.Learner):
             self._target_update_period = target_update_period
 
             # Create optimizers if they aren't given.
-            self._critic_optimizer = critic_optimizer or [snt.optimizers.Adam(1e-4) for _ in range(self._agent_number)]
-            self._policy_optimizer = policy_optimizer or [snt.optimizers.Adam(1e-4) for _ in range(self._agent_number)]
+            self._critic_optimizer = critic_optimizer or snt.optimizers.Adam(1e-4)
+            self._policy_optimizer = policy_optimizer or snt.optimizers.Adam(1e-4)
 
         # Batch dataset and create iterator.
         self._iterator = dataset_iterator
 
         # Expose the variables.
         self._variables = {}
-        for i in range(self._agent_number):
-            policy_network_to_expose = snt.Sequential(
-                [self._target_observation_networks[i], self._target_policy_networks[i]])
-            self._variables['policy_' + str(i)] = policy_network_to_expose.variables
-            self._variables['critic_' + str(i)] = self._target_critic_networks[i].variables
+        policy_network_to_expose = snt.Sequential(
+            [self._target_observation_network, self._target_policy_network])
+        self._variables['policy'] = policy_network_to_expose.variables
+        self._variables['critic'] = self._target_critic_network.variables
         
 
         # Create a checkpointer and snapshotter objects.
@@ -150,7 +136,7 @@ class D4PGLearner(acme.Learner):
 
         # if checkpoint:
         #     self._checkpointer = tf2_savers.Checkpointer(
-        #         subdirectory='d4pg_learner',
+        #         subdirectory='DDPG_learner',
         #         objects_to_save={
         #             'counter': self._counter,
         #             'policy': self._policy_network,
@@ -182,116 +168,77 @@ class D4PGLearner(acme.Learner):
 
         # Cast the additional discount to match the environment discount dtype.
         discount = tf.cast(self._discount, dtype=transitions.discount.dtype)
-        
-        batch_size = transitions.observation.shape[0]
-        
-        a_t_list = []
-        for i in range(self._agent_number):
-            observation = transitions.next_observation[:, i, :]
-            o_t = self._target_observation_networks[i](observation)
+                
+        with tf.GradientTape(persistent=True) as tape:
+            # Maybe transform the observation before feeding into policy and critic.
+            # Transforming the observations this way at the start of the learning
+            # step effectively means that the policy and critic share observation
+            # network weights.
+            o_tm1 = self._observation_network(transitions.observation)
+            o_t = self._target_observation_network(transitions.next_observation)
+            # This stop_gradient prevents gradients to propagate into the target
+            # observation network. In addition, since the online policy network is
+            # evaluated at o_t, this also means the policy loss does not influence
+            # the observation network training.
             o_t = tree.map_structure(tf.stop_gradient, o_t)
-            a_t = self._target_policy_networks[i](o_t)
-            a_t_list.append(a_t)
-        
-        agent_next_a_t = tf.concat([a_t_list[i] for i in range(self._agent_number)], axis=1)
-        agent_next_a_t = tf.reshape(agent_next_a_t, [batch_size, self._agent_number, self._agent_action_size])
-        
-        
-        critic_losses = []
-        policy_losses = []
-        for i in range(self._agent_number):
-        
-            with tf.GradientTape(persistent=True) as tape:
-                # Maybe transform the observation before feeding into policy and critic.
-                # Transforming the observations this way at the start of the learning
-                # step effectively means that the policy and critic share observation
-                # network weights.
-                o_tm1 = self._observation_networks[i](transitions.observation[:, i, :])
-                o_t = self._target_observation_networks[i](transitions.next_observation[:, i, :])
-                # This stop_gradient prevents gradients to propagate into the target
-                # observation network. In addition, since the online policy network is
-                # evaluated at o_t, this also means the policy loss does not influence
-                # the observation network training.
-                o_t = tree.map_structure(tf.stop_gradient, o_t)
 
-                # Critic learning.
-                critic_actions = tf2_utils.batch_concat([
-                    transitions.action[:, : i, :],
-                    transitions.action[:, i + 1 :, :],
-                    transitions.action[:, i, :],
-                ]) 
-                q_tm1 = self._critic_networks[i](o_tm1, tf.reshape(critic_actions, shape=[batch_size, -1]))
-                
-                critic_actions = tf2_utils.batch_concat([
-                    agent_next_a_t[:, : i, :],
-                    agent_next_a_t[:, i + 1 :, :],
-                    self._target_policy_networks[i](o_t),
-                ])
-                q_t = self._target_critic_networks[i](o_t, tf.reshape(critic_actions, shape=[batch_size, -1]))
 
-                # Critic loss.
-                critic_loss = losses.categorical(q_tm1, transitions.reward[:, i],
-                                                discount * transitions.discount, q_t)
-                critic_loss = tf.reduce_mean(critic_loss, axis=[0])
-                critic_losses.append(critic_loss)
+            q_tm1 = self._critic_network(o_tm1, transitions.action)
+            q_t = self._target_critic_network(o_t, self._target_policy_network(o_t))
 
-                # Actor learning.
-                dpg_a_t = self._policy_networks[i](o_t)
-                critic_actions = tf2_utils.batch_concat([
-                    transitions.action[:, : i, :],
-                    transitions.action[:, i + 1 :, :],
-                    dpg_a_t,
-                ]) 
-                
-                dpg_z_t = self._critic_networks[i](o_t, critic_actions)
-                dpg_q_t = dpg_z_t.mean()
+            # Critic loss.
+            critic_loss = losses.categorical(q_tm1, transitions.reward[:, -1],
+                                            discount * transitions.discount, q_t)
+            critic_loss = tf.reduce_mean(critic_loss, axis=[0])
 
-                # Actor loss. If clipping is true use dqda clipping and clip the norm.
-                dqda_clipping = 1.0 if self._clipping else None
-                policy_loss = losses.dpg(
-                    dpg_q_t,
-                    critic_actions,
-                    tape=tape,
-                    dqda_clipping=dqda_clipping,
-                    clip_norm=self._clipping)
-                policy_loss = tf.reduce_mean(policy_loss, axis=[0])
-                policy_losses.append(policy_loss)
+            # Actor learning.
+            dpg_a_t = self._policy_network(o_t)
+            
+            dpg_z_t = self._critic_network(o_t, dpg_a_t)
+            dpg_q_t = dpg_z_t.mean()
 
-            # Get trainable variables.
-            policy_variables = self._policy_networks[i].trainable_variables
-            critic_variables = (
-                # In this agent, the critic loss trains the observation network.
-                self._observation_networks[i].trainable_variables +
-                self._critic_networks[i].trainable_variables)
+            # Actor loss. If clipping is true use dqda clipping and clip the norm.
+            dqda_clipping = 1.0 if self._clipping else None
+            policy_loss = losses.dpg(
+                dpg_q_t,
+                dpg_a_t,
+                tape=tape,
+                dqda_clipping=dqda_clipping,
+                clip_norm=self._clipping)
+            policy_loss = tf.reduce_mean(policy_loss, axis=[0])
 
-            # Compute gradients.
-            replica_context = tf.distribute.get_replica_context()
-            policy_gradients = _average_gradients_across_replicas(
-                replica_context,
-                tape.gradient(policy_loss, policy_variables))
-            critic_gradients = _average_gradients_across_replicas(
-                replica_context,
-                tape.gradient(critic_loss, critic_variables))
+        # Get trainable variables.
+        policy_variables = self._policy_network.trainable_variables
+        critic_variables = (
+            # In this agent, the critic loss trains the observation network.
+            self._observation_network.trainable_variables +
+            self._critic_network.trainable_variables)
 
-            # Delete the tape manually because of the persistent=True flag.
-            del tape
+        # Compute gradients.
+        replica_context = tf.distribute.get_replica_context()
+        policy_gradients = _average_gradients_across_replicas(
+            replica_context,
+            tape.gradient(policy_loss, policy_variables))
+        critic_gradients = _average_gradients_across_replicas(
+            replica_context,
+            tape.gradient(critic_loss, critic_variables))
 
-            # Maybe clip gradients.
-            if self._clipping:
-                policy_gradients = tf.clip_by_global_norm(policy_gradients, 40.)[0]
-                critic_gradients = tf.clip_by_global_norm(critic_gradients, 40.)[0]
+        # Delete the tape manually because of the persistent=True flag.
+        del tape
 
-            # Apply gradients.
-            self._policy_optimizer[i].apply(policy_gradients, policy_variables)
-            self._critic_optimizer[i].apply(critic_gradients, critic_variables)
+        # Maybe clip gradients.
+        if self._clipping:
+            policy_gradients = tf.clip_by_global_norm(policy_gradients, 40.)[0]
+            critic_gradients = tf.clip_by_global_norm(critic_gradients, 40.)[0]
+
+        # Apply gradients.
+        self._policy_optimizer.apply(policy_gradients, policy_variables)
+        self._critic_optimizer.apply(critic_gradients, critic_variables)
 
         # Losses to track
-        new_critic_losses = tf.reduce_mean(tf.stack(critic_losses, axis=0))
-        new_policy_losses = tf.reduce_mean(tf.stack(policy_losses, axis=0))
-        
         object_to_return = dict()
-        object_to_return['policy_loss'] = new_policy_losses
-        object_to_return['critic_loss'] = new_critic_losses
+        object_to_return['policy_loss'] = policy_loss
+        object_to_return['critic_loss'] = critic_loss
         
         return object_to_return
 
@@ -299,22 +246,21 @@ class D4PGLearner(acme.Learner):
     @tf.function
     def _replicated_step(self):
         # Update target network
-        for i in range(self._agent_number):
-            online_variables = (
-                *self._observation_networks[i].variables,
-                *self._critic_networks[i].variables,
-                *self._policy_networks[i].variables,
-            )
-            target_variables = (
-                *self._target_observation_networks[i].variables,
-                *self._target_critic_networks[i].variables,
-                *self._target_policy_networks[i].variables,
-            )
+        online_variables = (
+            *self._observation_network.variables,
+            *self._critic_network.variables,
+            *self._policy_network.variables,
+        )
+        target_variables = (
+            *self._target_observation_network.variables,
+            *self._target_critic_network.variables,
+            *self._target_policy_network.variables,
+        )
 
-            # Make online -> target network update ops.
-            if tf.math.mod(self._num_steps, self._target_update_period) == 0:
-                for src, dest in zip(online_variables, target_variables):
-                    dest.assign(src)
+        # Make online -> target network update ops.
+        if tf.math.mod(self._num_steps, self._target_update_period) == 0:
+            for src, dest in zip(online_variables, target_variables):
+                dest.assign(src)
         self._num_steps.assign_add(1)
 
         # Get data from replay (dropping extras if any). Note there is no

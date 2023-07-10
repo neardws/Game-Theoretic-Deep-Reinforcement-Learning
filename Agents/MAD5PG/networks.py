@@ -104,6 +104,7 @@ def make_default_MAD3PGNetworks(
     policy_network = snt.Sequential([
         networks.LayerNormMLP(policy_layer_sizes, activate_final=True),
         networks.NearZeroInitializedLinear(num_dimensions),
+        networks.TanhToSpec(action_spec),
         network_utils.ClippedGaussian(sigma),
         networks.TanhToSpec(action_spec),
     ])

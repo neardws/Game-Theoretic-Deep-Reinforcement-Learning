@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""D4PG agent implementation."""
+"""DDPG agent implementation."""
 
 import copy
 import dataclasses
@@ -26,9 +26,10 @@ from acme import specs
 from acme import types
 from acme.adders import reverb as reverb_adders
 from acme.agents import agent
-from Agents.MAD4PG.actors import FeedForwardActor
-from Agents.MAD4PG.learning import D4PGLearner
+from Agents.D4PG_new.actors import FeedForwardActor
+from Agents.D4PG_new.learning import D4PGLearner
 from acme.tf import networks as network_utils
+from Utilities.FileOperator import load_obj
 from acme.tf import utils
 from acme.tf import variable_utils
 from acme.utils import counting
@@ -42,7 +43,7 @@ Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
 
 @dataclasses.dataclass
 class D4PGConfig:
-    """Configuration options for the D4PG agent."""
+    """Configuration options for the DDPG agent."""
 
     accelerator: Optional[str] = None
     discount: float = 0.99
@@ -55,15 +56,15 @@ class D4PGConfig:
     min_replay_size: int = 1000
     max_replay_size: int = 1000000
     samples_per_insert: Optional[float] = 32.0
-    n_step: int = 5
+    n_step: int = 1
     sigma: float = 0.3
     clipping: bool = True
     replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE
 
 
 @dataclasses.dataclass
-class D4PGNetworks:
-    """Structure containing the networks for D4PG."""
+class D4PGNetwork:
+    """Structure containing the networks for DDPG."""
 
     policy_network: snt.Module
     critic_network: snt.Module
@@ -86,8 +87,8 @@ class D4PGNetworks:
     def init(self, environment_spec: specs.EnvironmentSpec):
         """Initialize the networks given an environment spec."""
         # Get observation and action specs.
-        act_spec = environment_spec.critic_actions
-        obs_spec = environment_spec.edge_observations
+        act_spec = environment_spec.actions
+        obs_spec = environment_spec.observations
 
         # Create variables for the observation net and, as a side-effect, get a
         # spec describing the embedding space.
@@ -115,7 +116,7 @@ class D4PGNetworks:
         if sigma > 0.0:
             stack += [
                 network_utils.ClippedGaussian(sigma),
-                network_utils.ClipToSpec(environment_spec.edge_actions),
+                network_utils.ClipToSpec(environment_spec.actions),
             ]
 
         # Return a network which sequentially evaluates everything in the stack.
@@ -123,7 +124,7 @@ class D4PGNetworks:
 
 
 class D4PGBuilder:
-    """Builder for D4PG which constructs individual components of the agent."""
+    """Builder for DDPG which constructs individual components of the agent."""
 
     def __init__(self, config: D4PGConfig):
         self._config = config
@@ -189,9 +190,7 @@ class D4PGBuilder:
 
     def make_actor(
         self,
-        agent_number: int,
-        agent_action_size: int,
-        policy_networks: List[snt.Module],
+        policy_network: snt.Module,
         adder: Optional[adders.Adder] = None,
         variable_source: Optional[core.VariableSource] = None,
     ):
@@ -200,7 +199,7 @@ class D4PGBuilder:
             # Create the variable client responsible for keeping the actor up-to-date.
             variable_client = variable_utils.VariableClient(
                 client=variable_source,
-                variables={'policy_%d'% i: policy_network.variables for i, policy_network in enumerate(policy_networks)},
+                variables={'policy': policy_network.variables},
                 update_period=self._config.variable_update_period,
             )
 
@@ -213,18 +212,14 @@ class D4PGBuilder:
 
         # Create the actor which defines how we take actions.
         return FeedForwardActor(
-            agent_number=agent_number,
-            agent_action_size=agent_action_size,
-            policy_networks=policy_networks,
+            policy_network=policy_network,
             adder=adder,
             variable_client=variable_client,
         )
 
     def make_learner(
         self,
-        agent_number: int,
-        agent_action_size: int,
-        networks: Tuple[List[D4PGNetworks], List[D4PGNetworks]],
+        networks: Tuple[D4PGNetwork, D4PGNetwork],
         dataset: Iterator[reverb.ReplaySample],
         counter: Optional[counting.Counter] = None,
         logger: Optional[loggers.Logger] = None,
@@ -235,9 +230,6 @@ class D4PGBuilder:
 
         # The learner updates the parameters (and initializes them).
         return D4PGLearner(
-            agent_number=agent_number,
-            agent_action_size=agent_action_size,
-            
             online_networks=online_networks,
             target_networks=target_networks,
             # policy_network=online_networks.policy_network,
@@ -260,9 +252,9 @@ class D4PGBuilder:
 
 
 class D4PG(agent.Agent):
-    """D4PG Agent.
+    """DDPG Agent.
 
-    This implements a single-process D4PG agent. This is an actor-critic algorithm
+    This implements a single-process DDPG agent. This is an actor-critic algorithm
     that generates data via a behavior policy, inserts N-step transitions into
     a replay buffer, and periodically updates the policy (and as a result the
     behavior) by sampling uniformly from this buffer.
@@ -270,12 +262,9 @@ class D4PG(agent.Agent):
 
     def __init__(
         self,
-        agent_number: int,
-        agent_action_size: int,
+        environment_file: str,
         environment_spec: specs.EnvironmentSpec,
-        policy_network: snt.Module,
-        critic_network: snt.Module,
-        observation_network: types.TensorTransformation = tf.identity,
+        networks: D4PGNetwork,
         accelerator: Optional[str] = None,
         discount: float = 0.99,
         batch_size: int = 256,
@@ -286,7 +275,7 @@ class D4PG(agent.Agent):
         min_replay_size: int = 1000,
         max_replay_size: int = 1000000,
         samples_per_insert: float = 32.0,
-        n_step: int = 5,
+        n_step: int = 1,
         sigma: float = 0.3,
         clipping: bool = True,
         replay_table_name: str = reverb_adders.DEFAULT_PRIORITY_TABLE,
@@ -325,10 +314,14 @@ class D4PG(agent.Agent):
         """
         if not accelerator:
             accelerator = _get_first_available_accelerator_type(['TPU', 'GPU', 'CPU'])
-            
-        self._agent_number = agent_number
-        self._agent_action_size = agent_action_size
-
+        
+        environment = load_obj(environment_file)
+        if not environment_spec:
+            environment_spec = specs.make_environment_spec(environment)
+        self._environment_spec = environment_spec
+        self._environment_file = environment_file
+        self._sigma = sigma
+        self._networks = networks
         # Create the Builder object which will internally create agent components.
         builder = D4PGBuilder(
             # TODO(mwhoffman): pass the config dataclass in directly.
@@ -357,32 +350,22 @@ class D4PG(agent.Agent):
 
         with replicator.scope():
             # TODO(mwhoffman): pass the network dataclass in directly.
-            online_networks = []
-            target_networks = []
-            for _ in range(self._agent_number):
-                online_network = D4PGNetworks(policy_network=policy_network,
-                                            critic_network=critic_network,
-                                            observation_network=observation_network)
-
-                # Target networks are just a copy of the online networks.
-                target_network = copy.deepcopy(online_network)
-
-                # Initialize the networks.
-                online_network.init(environment_spec)
-                target_network.init(environment_spec)
-                online_networks.append(online_network)
-                target_networks.append(target_network)
+            online_networks = self._networks
+            target_networks = copy.deepcopy(online_networks)
+            # Initialize the networks.
+            online_networks.init(self._environment_spec)
+            target_networks.init(self._environment_spec)
 
         # TODO(mwhoffman): either make this Dataclass or pass only one struct.
         # The network struct passed to make_learner is just a tuple for the
         # time-being (for backwards compatibility).
-        networks = (online_networks, target_networks)
-
         # Create the behavior policy.
-        policy_networks = []
-        for i in range(self._agent_number):
-            policy_network = online_networks[i].make_policy(environment_spec, sigma)
-            policy_networks.append(policy_network)
+        networks = self._networks
+        networks.init(self._environment_spec)
+        policy_network = networks.make_policy(
+            environment_spec=self._environment_spec,
+            sigma=self._sigma,
+        )
 
         # Create the replay server and grab its address.
         replay_tables = builder.make_replay_tables(environment_spec)
@@ -393,16 +376,13 @@ class D4PG(agent.Agent):
         # data respectively.
         adder = builder.make_adder(replay_client)
         actor = builder.make_actor(
-            agent_number=self._agent_number, 
-            agent_action_size=self._agent_action_size, 
-            policy_networks=policy_networks, 
-            adder=adder
+            policy_network=policy_network,
+            adder=adder,
         )
+        
         dataset = builder.make_dataset_iterator(replay_client)
         learner = builder.make_learner(
-            agent_number=self._agent_number,
-            agent_action_size=self._agent_action_size,
-            networks=networks, 
+            networks=(online_networks, target_networks), 
             dataset=dataset,
             counter=counter,
             logger=logger,

@@ -9,7 +9,7 @@ if __name__ == "__main__":
     latitude_min: float = 30.654605745741608
     trajectories_time_start: str = '2016-11-16 23:00:00'
     trajectories_time_end: str = '2016-11-16 23:05:00'
-    trajectories_out_file_name: str = 'CSV/trajectories_20161116_2300_2350'
+    trajectories_out_file_name: str = 'CSV/trajectories_20161116_2300_2305'
     edge_number: int = 9
     communication_range: float = 500
     

@@ -3,7 +3,13 @@ sys.path.append(r"/home/neardws/Documents/Game-Theoretic-Deep-Reinforcement-Lear
 
 from typing import Optional, List, Tuple
 import numpy as np
-from Environment.environment import vehicularNetworkEnv, init_distance_matrix_and_radio_coverage_matrix, define_size_of_spaces
+from Environment.environment import init_distance_matrix_and_radio_coverage_matrix, define_size_of_spaces
+from Environment.environment import vehicularNetworkEnv as ConvexResourceAllocationEnv
+from Environment.environment_random_action import vehicularNetworkEnv as RandomResourceAllocationEnv
+from Environment.environment_local_processing import vehicularNetworkEnv as LocalOffloadingEnv
+from Environment.environment_offloaded_other_edge_nodes import vehicularNetworkEnv as EdgeOffloadEnv
+from Environment.environment_old import vehicularNetworkEnv as OldEnv
+from Environment.environment_global_actions import vehicularNetworkEnv as GlobalActionEnv
 from Environment.environmentConfig import vehicularNetworkEnvConfig
 from Environment.dataStruct import vehicleList, timeSlots, taskList, edgeList
 from Utilities.FileOperator import save_obj, init_file_name
@@ -11,11 +17,11 @@ from Utilities.FileOperator import save_obj, init_file_name
 def get_default_environment(
         flatten_space: Optional[bool] = False,
         occuiped: Optional[bool] = False,
-        for_mad5pg: Optional[bool] = False,
-    ) -> Tuple[timeSlots, taskList, vehicleList, edgeList, np.ndarray, np.ndarray, List[List[List[int]]], vehicularNetworkEnvConfig, vehicularNetworkEnv]:
+        for_mad5pg: Optional[bool] = True,
+    ):
     
     environment_config = vehicularNetworkEnvConfig(
-        task_request_rate=0.35,
+        task_request_rate=0.7,
     )
     environment_config.vehicle_seeds += [i for i in range(environment_config.vehicle_number)]
     
@@ -74,7 +80,82 @@ def get_default_environment(
     print("environment_config.reward_size: ", environment_config.reward_size)
     print("environment_config.critic_network_action_size: ", environment_config.critic_network_action_size)
     
-    environment = vehicularNetworkEnv(
+    # convexEnvironment = ConvexResourceAllocationEnv(
+    #     envConfig = environment_config,
+    #     time_slots = time_slots,
+    #     task_list = task_list,
+    #     vehicle_list = vehicle_list,
+    #     edge_list = edge_list,
+    #     distance_matrix = distance_matrix, 
+    #     channel_condition_matrix = channel_condition_matrix, 
+    #     vehicle_index_within_edges = vehicle_index_within_edges,
+    #     vehicle_observed_index_within_edges = vehicle_observed_index_within_edges,
+    #     flatten_space = flatten_space,
+    #     occuiped = occuiped,
+    #     for_mad5pg = for_mad5pg, 
+    # )
+    
+    # randomEnvironment = RandomResourceAllocationEnv(
+    #     envConfig = environment_config,
+    #     time_slots = time_slots,
+    #     task_list = task_list,
+    #     vehicle_list = vehicle_list,
+    #     edge_list = edge_list,
+    #     distance_matrix = distance_matrix, 
+    #     channel_condition_matrix = channel_condition_matrix, 
+    #     vehicle_index_within_edges = vehicle_index_within_edges,
+    #     vehicle_observed_index_within_edges = vehicle_observed_index_within_edges,
+    #     flatten_space = flatten_space,
+    #     occuiped = occuiped,
+    #     for_mad5pg = for_mad5pg, 
+    # )
+    
+    # localEnvironment = LocalOffloadingEnv(
+    #     envConfig = environment_config,
+    #     time_slots = time_slots,
+    #     task_list = task_list,
+    #     vehicle_list = vehicle_list,
+    #     edge_list = edge_list,
+    #     distance_matrix = distance_matrix, 
+    #     channel_condition_matrix = channel_condition_matrix, 
+    #     vehicle_index_within_edges = vehicle_index_within_edges,
+    #     vehicle_observed_index_within_edges = vehicle_observed_index_within_edges,
+    #     flatten_space = flatten_space,
+    #     occuiped = occuiped,
+    #     for_mad5pg = for_mad5pg, 
+    # )
+    
+    # edgeEnvironment = EdgeOffloadEnv(
+    #     envConfig = environment_config,
+    #     time_slots = time_slots,
+    #     task_list = task_list,
+    #     vehicle_list = vehicle_list,
+    #     edge_list = edge_list,
+    #     distance_matrix = distance_matrix, 
+    #     channel_condition_matrix = channel_condition_matrix, 
+    #     vehicle_index_within_edges = vehicle_index_within_edges,
+    #     vehicle_observed_index_within_edges = vehicle_observed_index_within_edges,
+    #     flatten_space = flatten_space,
+    #     occuiped = occuiped,
+    #     for_mad5pg = for_mad5pg, 
+    # )
+    
+    # oldEnvironment = OldEnv(
+    #             envConfig = environment_config,
+    #     time_slots = time_slots,
+    #     task_list = task_list,
+    #     vehicle_list = vehicle_list,
+    #     edge_list = edge_list,
+    #     distance_matrix = distance_matrix, 
+    #     channel_condition_matrix = channel_condition_matrix, 
+    #     vehicle_index_within_edges = vehicle_index_within_edges,
+    #     vehicle_observed_index_within_edges = vehicle_observed_index_within_edges,
+    #     flatten_space = flatten_space,
+    #     occuiped = occuiped,
+    #     for_mad5pg = for_mad5pg, 
+    # )
+    
+    globalActionEnv = GlobalActionEnv(
         envConfig = environment_config,
         time_slots = time_slots,
         task_list = task_list,
@@ -90,8 +171,15 @@ def get_default_environment(
     )
     
     file_name = init_file_name()
-    save_obj(environment, file_name["init_environment_name"])
-    
+    # save_obj(randomEnvironment, file_name["random_environment_name"])
+    # save_obj(convexEnvironment, file_name["convex_environment_name"])
+    # save_obj(localEnvironment, file_name["local_environment_name"])
+    # save_obj(edgeEnvironment, file_name["edge_environment_name"])
+    # save_obj(oldEnvironment, file_name["old_environment_name"])
+    save_obj(globalActionEnv, file_name["global_environment_name"])
 
 if __name__ == "__main__":
-    get_default_environment(for_mad5pg=True)
+    # for d4pg
+    get_default_environment(flatten_space=True)
+    # for mad4pg
+    # get_default_environment(for_mad5pg=True)

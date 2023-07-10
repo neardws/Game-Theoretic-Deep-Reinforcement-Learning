@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""D4PG learner implementation."""
+"""DDPG learner implementation."""
 
 import time
 from typing import Dict, Iterator, List, Optional, Union, Sequence
@@ -34,10 +34,10 @@ import tree
 Replicator = Union[snt.distribute.Replicator, snt.distribute.TpuReplicator]
 
 
-class D4PGLearner(acme.Learner):
-    """D4PG learner.
+class DDPGLearner(acme.Learner):
+    """DDPG learner.
 
-    This is the learning component of a D4PG agent. IE it takes a dataset as input
+    This is the learning component of a DDPG agent. IE it takes a dataset as input
     and implements update functionality to learn from this dataset.
     """
     def __init__(
@@ -150,7 +150,7 @@ class D4PGLearner(acme.Learner):
 
         # if checkpoint:
         #     self._checkpointer = tf2_savers.Checkpointer(
-        #         subdirectory='d4pg_learner',
+        #         subdirectory='DDPG_learner',
         #         objects_to_save={
         #             'counter': self._counter,
         #             'policy': self._policy_network,
@@ -230,7 +230,7 @@ class D4PGLearner(acme.Learner):
                 q_t = self._target_critic_networks[i](o_t, tf.reshape(critic_actions, shape=[batch_size, -1]))
 
                 # Critic loss.
-                critic_loss = losses.categorical(q_tm1, transitions.reward[:, i],
+                critic_loss = losses.categorical(q_tm1, transitions.reward[:, -1],
                                                 discount * transitions.discount, q_t)
                 critic_loss = tf.reduce_mean(critic_loss, axis=[0])
                 critic_losses.append(critic_loss)

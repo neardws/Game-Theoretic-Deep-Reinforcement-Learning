@@ -241,8 +241,18 @@ class edgeList(object):
         self._uniformed = uniformed
         self._seed = seed
         if uniformed:
-            np.random.seed(seed)
-            self._computing_speeds = np.random.uniform(self._minimum_computing_cycles, self._maximum_computing_cycles, self._edge_number)
+            # np.random.seed(seed)
+            # self._computing_speeds = np.random.uniform(self._minimum_computing_cycles, self._maximum_computing_cycles, self._edge_number)
+            # 3 - 10
+            self._computing_speeds = [3.0 * 1e9, 10.0 * 1e9, 3.0 * 1e9, 10.0 * 1e9, 6.0 * 1e9, 10.0 * 1e9, 3.0 * 1e9, 10.0 * 1e9, 3.0 * 1e9]
+            # 1 - 10
+            # self._computing_speeds = [1.0 * 1e9, 8.0 * 1e9, 1.0 * 1e9, 10.0 * 1e9, 4.0 * 1e9, 10.0 * 1e9, 1.0 * 1e9, 8.0 * 1e9, 1.0 * 1e9]
+            # 2 - 10
+            # self._computing_speeds = [2.0 * 1e9, 9.0 * 1e9, 2.0 * 1e9, 10.0 * 1e9, 5.0 * 1e9, 10.0 * 1e9, 2.0 * 1e9, 9.0 * 1e9, 2.0 * 1e9]
+            # 4 - 10
+            # self._computing_speeds = [4.5 * 1e9, 10.0 * 1e9, 4.5 * 1e9, 10.0 * 1e9, 7.0 * 1e9, 10.0 * 1e9, 4.5 * 1e9, 10.0 * 1e9, 4.5 * 1e9]
+            # 5 - 10
+            # self._computing_speeds = [6 * 1e9, 10.0 * 1e9, 6 * 1e9, 10.0 * 1e9, 8.0 * 1e9, 10.0 * 1e9, 6 * 1e9, 10.0 * 1e9, 6 * 1e9]
             self._edge_list = [edge(edge_index, self._power, self._bandwidth, computing_speed, self._communication_range, edge_x, edge_y) for edge_index, computing_speed, edge_x, edge_y in zip(range(edge_number), self._computing_speeds, self._edge_xs, self._edge_ys)]
         else:
             pass

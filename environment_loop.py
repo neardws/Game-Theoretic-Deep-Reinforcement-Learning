@@ -16,7 +16,6 @@
 """A simple agent-environment training loop."""
 
 import operator
-from re import M
 import time
 from typing import Optional, Sequence
 
@@ -119,7 +118,10 @@ class EnvironmentLoop(core.Worker):
         average_service_times: float = 0 
         successful_serviced_numbers: float = 0
         task_required_numbers: float = 0
+        task_offloaded_numbers: float = 0
         average_service_rate: float = 0
+        average_offloaded_rate: float = 0
+        average_local_rate: float = 0
         while not timestep.last():
         # Generate an action from the agent's policy and step the environment.
             # print("timestep.observation: ", timestep.observation[:, -2:])
@@ -131,7 +133,7 @@ class EnvironmentLoop(core.Worker):
             
             environment_step_time_start = time.time()
             timestep, cumulative_reward, average_vehicle_SINR, average_vehicle_intar_interference, average_vehicle_inter_interference, \
-                average_vehicle_interference, average_transmision_time, average_wired_transmission_time, average_execution_time, average_service_time, successful_serviced_number, task_required_number = self._environment.step(action)
+                average_vehicle_interference, average_transmision_time, average_wired_transmission_time, average_execution_time, average_service_time, successful_serviced_number, task_offloaded_number, task_required_number = self._environment.step(action)
             
             cumulative_rewards += cumulative_reward
             average_vehicle_SINRs += average_vehicle_SINR
@@ -144,7 +146,7 @@ class EnvironmentLoop(core.Worker):
             average_service_times += average_service_time
             successful_serviced_numbers += successful_serviced_number
             task_required_numbers += task_required_number
-            average_service_rate += cumulative_reward         
+            task_offloaded_numbers += task_offloaded_number
             
             environment_step_time += time.time() - environment_step_time_start
             
@@ -197,12 +199,20 @@ class EnvironmentLoop(core.Worker):
         average_vehicle_intar_interferences /= task_required_numbers
         average_vehicle_inter_interferences /= task_required_numbers 
         average_vehicle_interferences /= task_required_numbers
-        average_transmision_times /= successful_serviced_numbers
-        average_wired_transmission_times /= successful_serviced_numbers
-        average_execution_times /= successful_serviced_numbers
-        average_service_times /= successful_serviced_numbers
-        service_rate = successful_serviced_numbers / task_required_numbers
-        average_service_rate /= episode_steps
+        
+        average_transmision_times /= task_required_numbers
+        average_wired_transmission_times /= task_required_numbers
+        average_execution_times /= task_required_numbers
+        average_service_times /= task_required_numbers
+        
+        # average_transmision_times /= successful_serviced_numbers
+        # average_wired_transmission_times /= successful_serviced_numbers
+        # average_execution_times /= successful_serviced_numbers
+        # average_service_times /= successful_serviced_numbers
+        average_service_rate = successful_serviced_numbers / task_required_numbers
+        average_offloaded_rate = task_offloaded_numbers / task_required_numbers
+        average_local_rate = (task_required_numbers - task_offloaded_numbers) / task_required_numbers
+        # average_service_rate /= episode_steps
         result = {
             'episode_length': episode_steps,
             'episode_return': episode_return,
@@ -217,6 +227,8 @@ class EnvironmentLoop(core.Worker):
             'average_execution_times': average_execution_times,
             'average_service_times': average_service_times,
             'service_rate': average_service_rate,
+            'offload_rate': average_offloaded_rate,
+            'local_rate': average_local_rate,
         }
         result.update(counts)
         for observer in self._observers:
